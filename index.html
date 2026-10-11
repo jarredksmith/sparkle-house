@@ -114,7 +114,7 @@ h1,h2,h3{font-family:var(--display);line-height:1.1;margin:0}
 .tasks{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:10px}
 .task{display:flex;align-items:center;gap:12px;background:var(--paper);border-radius:18px;padding:12px 12px 12px 10px;box-shadow:0 3px 0 var(--ledge);border:3px solid transparent;cursor:pointer}
 .task.sel{border-color:var(--sun);flex-wrap:wrap}
-.task-actions{flex-basis:100%;display:flex;gap:8px;padding:8px 0 0 50px}
+.task-actions{flex-basis:100%;display:flex;flex-wrap:wrap;gap:8px;padding:8px 0 0 50px}
 .task-actions .btn{flex:0 1 auto;padding:8px 16px;font-size:15px;box-shadow:0 3px 0 var(--ledge);background:var(--meadow)}
 .task-actions .btn.danger{color:#C2405E}
 .edit-hint{text-align:center;font-size:14px;font-weight:700;color:var(--ink-soft);margin:10px 0 0}
@@ -212,8 +212,26 @@ h1,h2,h3{font-family:var(--display);line-height:1.1;margin:0}
 
 /* coach mode */
 .coach{position:fixed;inset:0;z-index:70;background:#1d2a25;color:#fff;display:flex;flex-direction:column}
+.coach .cam{position:absolute;inset:0}
+.coach .cam.mirror{transform:scaleX(-1)}
 .coach video{position:absolute;inset:0;width:100%;height:100%;object-fit:cover}
-.coach video.mirror{transform:scaleX(-1)}
+.cam-overlay{position:absolute;inset:0;width:100%;height:100%;pointer-events:none}
+.area-ov{position:absolute;inset:0;width:100%;height:100%;pointer-events:none}
+.zone.ask{background:rgba(138,211,240,.32);box-shadow:inset 0 0 0 3px var(--sky)}
+/* focus area editor */
+.area-ed{position:fixed;inset:0;z-index:82;background:#1d2a25;display:flex;flex-direction:column;padding:calc(var(--safe-t) + 12px) 14px calc(var(--safe-b) + 14px);gap:10px}
+.area-ed .tip{background:var(--bubble);border:3px solid var(--bubble-edge);border-radius:20px;padding:10px 14px;font-weight:700;color:var(--ink)}
+.area-ed svg{flex:1;min-height:0;width:100%;touch-action:none;cursor:crosshair}
+.area-ed .row .btn{padding:12px 10px;font-size:15px}
+/* ask */
+.ask-input{display:flex;gap:8px;align-items:center}
+.ask-input input{flex:1;min-width:0;font:inherit;font-weight:700;font-size:16px;border:3px solid var(--line);border-radius:14px;padding:12px;background:#fff;color:var(--ink)}
+.mic{width:48px;height:48px;border-radius:50%;border:0;background:#fff;box-shadow:0 3px 0 var(--ledge);display:grid;place-items:center;flex:none}
+.mic svg{width:22px;height:22px}
+.mic.on{background:var(--berry);color:#fff;box-shadow:0 3px 0 #C2405E;animation:blink 1s infinite}
+.ask-chips{display:flex;flex-wrap:wrap;gap:6px;margin:10px 0 4px}
+.ask-chips button{border:0;background:#fff;border-radius:999px;padding:7px 12px;font-weight:700;font-size:14px;box-shadow:0 2px 0 var(--ledge)}
+.ask-answer{margin:14px 0}
 .coach .chip{padding:7px 10px;font-size:15px;gap:6px}
 .ch-banner{position:relative;margin:12px auto 0;width:max-content;max-width:calc(100% - 28px);background:var(--sun);color:var(--ink);border-radius:22px;padding:6px 22px 8px;text-align:center;box-shadow:0 5px 0 #E2B321}
 .ch-time{font-family:var(--display);font-weight:800;font-size:44px;line-height:1.05;font-variant-numeric:tabular-nums}
@@ -233,7 +251,9 @@ h1,h2,h3{font-family:var(--display);line-height:1.1;margin:0}
 .chip .dot.moving{background:var(--sun)}
 .chip .dot.checking{background:var(--sky);animation:blink .7s infinite}
 @keyframes blink{50%{opacity:.3}}
-.chip.status{min-width:0;flex:0 1 auto}
+.chip.status{min-width:0;flex:0 1 auto;display:inline-flex}
+.coach .hud2{position:relative;padding:8px 14px 0}
+.coach .bottom .row .btn{font-size:16px;padding:13px 8px}
 .chip.status span:last-child{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .chip.timer{margin-left:auto;flex:none}
 .chip.score{flex:none}
@@ -605,13 +625,30 @@ function applyVerify(roomId, res, how) {
 function loadImage(src) {
   return new Promise((ok, bad) => { const i = new Image(); i.onload = () => ok(i); i.onerror = bad; i.src = src; });
 }
-function toJpeg(source, w, h, max, q) {
+function toJpeg(source, w, h, max, q, area = null) {
   const s = Math.min(1, max / Math.max(w, h));
   const c = document.createElement('canvas');
   c.width = Math.round(w * s); c.height = Math.round(h * s);
-  c.getContext('2d').drawImage(source, 0, 0, c.width, c.height);
+  const ctx = c.getContext('2d');
+  ctx.drawImage(source, 0, 0, c.width, c.height);
+  if (area && area.length >= 3) {
+    // Gray out everything outside the focus area so the AI ignores it.
+    ctx.fillStyle = '#808080';
+    ctx.beginPath();
+    ctx.rect(0, 0, c.width, c.height);
+    area.forEach(([x, y], i) => (i ? ctx.lineTo(x * c.width, y * c.height) : ctx.moveTo(x * c.width, y * c.height)));
+    ctx.closePath();
+    ctx.fill('evenodd');
+  }
   const dataUrl = c.toDataURL('image/jpeg', q);
   return { dataUrl, b64: dataUrl.split(',')[1] };
+}
+function areaPath(area, w = 1, h = 1) {
+  return area && area.length >= 3 ? 'M' + area.map(([x, y]) => `${(x * w).toFixed(4)},${(y * h).toFixed(4)}`).join('L') + 'Z' : '';
+}
+function areaOverlaySVG(area, w = 1, h = 1, extra = '') {
+  const inner = areaPath(area, w, h);
+  return (inner ? `<path d="M0,0H${w}V${h}H0Z ${inner}" fill="rgba(20,28,25,.55)" fill-rule="evenodd"/><path d="${inner}" fill="none" stroke="#FFD447" stroke-width="3" stroke-dasharray="10 7" vector-effect="non-scaling-stroke"/>` : '') + extra;
 }
 async function fileToJpeg(file, max = 1280, q = 0.82) {
   const url = URL.createObjectURL(file);
@@ -671,6 +708,13 @@ const api = {
       return { done: [], feedback: NOCHANGE_LINES[Math.floor(Math.random() * NOCHANGE_LINES.length)] };
     }
     return this.call('/verify', { before: beforeB64 || null, after: afterB64, tasks });
+  },
+  async ask(body) {
+    if (!this.live) {
+      await wait(900);
+      return { answer: 'In demo mode I can\'t really see your room. Connect your AI helper in Settings and I\'ll point things out for you!', zone: 'none', found: false };
+    }
+    return this.call('/ask', body);
   },
   async speak(text, voice) {
     const r = await fetch(this.base() + '/speak', {
@@ -778,7 +822,8 @@ function renderRoom() {
   const sel = sess.tasks.find((t) => t.id === mem.selected);
   const photo = img
     ? `<div class="photo"><img src="${img.dataUrl}" alt="Your photo of the ${esc(room.name.toLowerCase())}">
-        <div class="zones">${ZONES.map((z) => `<div class="zone ${sel && sel.zone === z ? 'hot' : ''}">${zoneCounts[z] ? `<button class="mk" data-act="zone" data-zone="${z}" aria-label="${zoneCounts[z]} tasks here">${zoneCounts[z]}</button>` : ''}</div>`).join('')}</div></div>`
+        ${img.area ? `<svg class="area-ov" viewBox="0 0 1 1" preserveAspectRatio="none">${areaOverlaySVG(img.area)}</svg>` : ''}
+        <div class="zones">${ZONES.map((z) => `<div class="zone ${mem.askZone === z ? 'ask' : sel && sel.zone === z ? 'hot' : ''}">${zoneCounts[z] ? `<button class="mk" data-act="zone" data-zone="${z}" aria-label="${zoneCounts[z]} tasks here">${zoneCounts[z]}</button>` : ''}</div>`).join('')}</div></div>`
     : `<div class="no-photo">${fluffSVG()}<span>Photos aren't kept after you close the app. Use “Scan again” to see where each task is.</span></div>`;
   const fb = mem.lastFeedback[room.id] || sess.summary || '';
   app.innerHTML = head + photo + `
@@ -790,11 +835,12 @@ function renderRoom() {
         <button class="tick" data-act="toggle" data-id="${t.id}" aria-pressed="${t.done}" aria-label="${t.done ? 'Undo' : 'Mark done'}: ${esc(t.title)}">${CHECK}</button>
         <div class="tbody"><div class="ttl">${esc(t.title)}</div>${t.detail && !t.done ? `<div class="tdet">${esc(t.detail)}</div>` : ''}${by ? `<div class="by">${esc(by.name)}${t.how === 'coach' || t.how === 'photo' ? ', checked by Fluff' : ''}</div>` : ''}</div>
         <div class="tmeta"><span class="pts">${t.points} ✦</span>${t.minutes ? `<span class="min">${t.minutes} min</span>` : ''}</div>
-        ${mem.selected === t.id ? `<div class="task-actions"><button class="btn" data-act="edit-task" data-id="${t.id}">Edit</button><button class="btn danger" data-act="delete-task" data-id="${t.id}">Delete</button></div>` : ''}
+        ${mem.selected === t.id ? `<div class="task-actions"><button class="btn" data-act="edit-task" data-id="${t.id}">Edit</button><button class="btn danger" data-act="delete-task" data-id="${t.id}">Delete</button>${t.done ? '' : `<button class="btn" data-act="ask-task" data-id="${t.id}">Where is it?</button>`}</div>` : ''}
       </li>`;
     }).join('')}</ul>
     <p class="edit-hint">Tap a chore to edit or delete it.</p>
     <div class="row" style="margin-top:14px;justify-content:center;flex-wrap:wrap">
+      <button class="btn text" data-act="ask">Ask Fluff</button>
       <button class="btn text" data-act="add-task">Add a task</button>
       <button class="btn text" data-act="photo" data-src="cam" data-mode="rescan">Scan again</button>
       <button class="btn text" data-act="finish">Finish up</button>
@@ -840,7 +886,7 @@ function openSheet(html, onMount) {
   const f = w.querySelector('input,button');
   if (f) setTimeout(() => f.focus(), 50);
 }
-function closeSheet() { const s = $('#sheet'); if (s) s.remove(); }
+function closeSheet() { const s = $('#sheet'); if (s) s.remove(); if (askRec) { try { askRec.abort(); } catch (e) { /* ignore */ } askRec = null; } }
 
 function openWelcome() {
   openSheet(`
@@ -948,6 +994,47 @@ function openFinish() {
     <div class="row"><button class="btn primary" data-act="clear-list">Clear the list</button><button class="btn" data-act="close-sheet">Keep it</button></div>`);
 }
 
+/* ---------- focus area editor: tap points around the part of the view that counts ---------- */
+function openAreaEditor({ src, w, h, mirror = false, initial = null, tip }) {
+  return new Promise((resolve) => {
+    let pts = (initial || []).map(([x, y]) => [mirror ? (1 - x) * w : x * w, y * h]);
+    const ed = document.createElement('div');
+    ed.className = 'area-ed'; ed.setAttribute('role', 'dialog'); ed.setAttribute('aria-label', 'Set focus area');
+    ed.innerHTML = `<div class="tip">${esc(tip || 'Tap points around the part of the room to clean. Anything outside gets ignored.')}</div>
+      <svg viewBox="0 0 ${w} ${h}" preserveAspectRatio="xMidYMid meet"><image href="${src}" width="${w}" height="${h}"/><g id="edDraw"></g></svg>
+      <div class="row"><button class="btn" data-ed="undo">Undo</button><button class="btn" data-ed="clear">Clear</button><button class="btn" data-ed="whole">Whole view</button></div>
+      <div class="row"><button class="btn" data-ed="cancel">Cancel</button><button class="btn primary" data-ed="save">Save area</button></div>`;
+    document.body.appendChild(ed);
+    const svg = ed.querySelector('svg'), g = ed.querySelector('#edDraw'), saveBtn = ed.querySelector('[data-ed=save]');
+    const r = Math.max(w, h) / 60;
+    const draw = () => {
+      const d = pts.length ? 'M' + pts.map((p) => p.join(',')).join('L') + (pts.length >= 3 ? 'Z' : '') : '';
+      g.innerHTML = (pts.length >= 3 ? `<path d="M0,0H${w}V${h}H0Z ${d}" fill="rgba(20,28,25,.55)" fill-rule="evenodd"/>` : '') +
+        (d ? `<path d="${d}" fill="none" stroke="#FFD447" stroke-width="${r / 2.5}" stroke-linejoin="round"/>` : '') +
+        pts.map(([x, y], i) => `<circle cx="${x}" cy="${y}" r="${i ? r * 0.7 : r}" fill="${i ? '#FFD447' : '#FF6F8E'}" stroke="#2D3B36" stroke-width="${r / 5}"/>`).join('');
+      saveBtn.disabled = pts.length > 0 && pts.length < 3;
+    };
+    const finish = (val) => { ed.remove(); resolve(val); };
+    svg.addEventListener('click', (e) => {
+      const m = svg.getScreenCTM(); if (!m) return;
+      const pt = svg.createSVGPoint(); pt.x = e.clientX; pt.y = e.clientY;
+      const p = pt.matrixTransform(m.inverse());
+      if (p.x < 0 || p.y < 0 || p.x > w || p.y > h) return;
+      pts.push([Math.round(p.x), Math.round(p.y)]); draw();
+    });
+    ed.addEventListener('click', (e) => {
+      const b = e.target.closest('[data-ed]'); if (!b) return;
+      const act = b.dataset.ed;
+      if (act === 'undo') { pts.pop(); draw(); }
+      else if (act === 'clear') { pts = []; draw(); }
+      else if (act === 'whole') finish(null);
+      else if (act === 'cancel') finish(undefined);
+      else if (act === 'save') finish(pts.length >= 3 ? pts.map(([x, y]) => [+(mirror ? 1 - x / w : x / w).toFixed(4), +(y / h).toFixed(4)]) : null);
+    });
+    draw();
+  });
+}
+
 /* ---------- photo flows ---------- */
 let photoMode = 'before';
 function askPhoto(src, mode) {
@@ -969,12 +1056,25 @@ async function onPhoto(file) {
   const room = roomById(ui.roomId);
   if (!room) return;
   if (photoMode === 'after') return checkWithPhoto(file, room);
+  let area = null, full;
+  try { full = await fileToJpeg(file, 1280, 0.82); } catch (e) { toast('Couldn\'t open that photo. Try another one.'); return; }
+  const choice = await askFocusChoice(room, full.dataUrl);
+  if (choice === 'cancel') return;
+  if (choice === 'last') area = room.photoArea;
+  if (choice === 'draw') {
+    const el = await loadImage(full.dataUrl);
+    const drawn = await openAreaEditor({ src: full.dataUrl, w: el.naturalWidth, h: el.naturalHeight, initial: room.photoArea, tip: 'Tap points around the part of the photo to clean. Anything outside gets ignored.' });
+    if (drawn === undefined) return;
+    area = drawn;
+    room.photoArea = drawn || null; save();
+  }
   busy('Taking a look…');
   try {
-    const img = await fileToJpeg(file, 1280, 0.82);
+    const src = await loadImage(full.dataUrl);
+    const img = area ? toJpeg(src, src.naturalWidth, src.naturalHeight, 1280, 0.82, area) : full;
     const res = await api.analyze(img.b64, room.name);
-    const small = await fileToJpeg(file, 768, 0.78);
-    mem.before[room.id] = { dataUrl: img.dataUrl, small: small.b64 };
+    const small = toJpeg(src, src.naturalWidth, src.naturalHeight, 768, 0.78, area);
+    mem.before[room.id] = { dataUrl: full.dataUrl, small: small.b64, area };
     const prev = S.sessions[room.id];
     const kept = prev ? prev.tasks.filter((t) => t.done) : [];
     const tasks = (res.tasks || []).map((t) => ({ id: uid(), title: t.title, detail: t.detail || '', zone: ZONES.includes(t.zone) ? t.zone : null, points: clamp(Number(t.points) || 3, 1, 25), minutes: clamp(Number(t.minutes) || 0, 0, 90), category: t.category || 'other', done: false }));
@@ -991,13 +1091,33 @@ async function onPhoto(file) {
     toast(e.message || 'Something went wrong. Try again.');
   } finally { unbusy(); render(); }
 }
+function askFocusChoice(room, dataUrl) {
+  return new Promise((resolve) => {
+    openSheet(`<h2>Scan this photo?</h2>
+      <div class="photo" style="margin-bottom:14px"><img src="${dataUrl}" alt="Your photo">${room.photoArea ? `<svg class="area-ov" viewBox="0 0 1 1" preserveAspectRatio="none">${areaOverlaySVG(room.photoArea)}</svg>` : ''}</div>
+      <p style="margin:0 0 12px;font-weight:600">Seeing into another room? Draw a focus area so Fluff ignores everything outside it.</p>
+      <div class="row" style="flex-wrap:wrap">
+        <button class="btn primary" data-fc="${room.photoArea ? 'last' : 'whole'}">${room.photoArea ? 'Scan with saved area' : 'Scan whole photo'}</button>
+        <button class="btn" data-fc="draw">${room.photoArea ? 'Redraw area' : 'Draw focus area'}</button>
+      </div>
+      ${room.photoArea ? '<button class="btn text" data-fc="whole" style="margin:8px auto 0">Scan whole photo instead</button>' : ''}`,
+    (w) => {
+      w.addEventListener('click', (e) => {
+        const b = e.target.closest('[data-fc]');
+        if (b) { closeSheet(); resolve(b.dataset.fc); }
+        else if (e.target === w) resolve('cancel');
+      });
+    });
+  });
+}
 async function checkWithPhoto(file, room) {
   const sess = S.sessions[room.id];
   const open = sess.tasks.filter((t) => !t.done);
   busy('Checking your work…');
   try {
-    const after = await fileToJpeg(file, 960, 0.8);
     const before = mem.before[room.id];
+    const afterSrc = await loadImage(URL.createObjectURL(file));
+    const after = toJpeg(afterSrc, afterSrc.naturalWidth, afterSrc.naturalHeight, 960, 0.8, before ? before.area : room.photoArea);
     const res = await api.verify(before ? before.small : null, after.b64, open.map((t) => ({ id: t.id, title: t.title, zone: t.zone })));
     const r = applyVerify(room.id, res, 'photo');
     mem.lastFeedback[room.id] = res.feedback || (r.count ? 'Nice work!' : 'I couldn\'t spot changes yet.');
@@ -1125,6 +1245,74 @@ function coachFluff(happy) {
   f.classList.toggle('happy', happy);
   if (happy) setTimeout(() => f.classList.remove('happy'), 2200);
 }
+/* ---------- Ask Fluff: two-way questions about the room ---------- */
+const SpeechRec = window.SpeechRecognition || window.webkitSpeechRecognition;
+const MIC = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0 0 14 0"/><path d="M12 18v3"/></svg>';
+let askRec = null;
+function askRoomId() { return C.el ? C.roomId : ui.roomId; }
+function openAsk(taskId = null) {
+  const sess = S.sessions[askRoomId()];
+  const t = taskId && sess ? sess.tasks.find((x) => x.id === taskId) : null;
+  const suggestions = t ? [`I can't find it. Where is it?`, `What exactly should I do?`, `Is this already done?`] : ['What should I do next?', 'What\'s the quickest chore left?', 'Where is the trash?'];
+  openSheet(`<h2>Ask Fluff</h2>
+    ${t ? `<p style="margin:0 0 8px;font-weight:700">About: ${esc(t.title)}</p>` : ''}
+    <div class="ask-input"><input id="askQ" placeholder="${t ? 'I don\'t see it…' : 'Ask about the room…'}" maxlength="300" autocomplete="off">
+      ${SpeechRec ? `<button class="mic" data-act="ask-mic" aria-label="Speak your question">${MIC}</button>` : ''}
+      <button class="btn primary small" data-act="ask-send" data-id="${t ? t.id : ''}">Ask</button></div>
+    <div class="ask-chips">${suggestions.map((q) => `<button data-act="ask-chip" data-id="${t ? t.id : ''}" data-q="${esc(q)}">${esc(q)}</button>`).join('')}</div>
+    <div id="askOut"></div>`);
+}
+async function askImage(roomId) {
+  if (C.el && C.video && C.video.videoWidth) return grabFrame(1024).b64;
+  const b = mem.before[roomId];
+  if (!b) return null;
+  const el = await loadImage(b.dataUrl);
+  return toJpeg(el, el.naturalWidth, el.naturalHeight, 1024, 0.8, b.area).b64;
+}
+async function sendAsk(question, taskId) {
+  question = (question || '').trim();
+  const out = $('#askOut');
+  if (!question || !out) return;
+  const roomId = askRoomId();
+  const sess = S.sessions[roomId];
+  const t = taskId && sess ? sess.tasks.find((x) => x.id === taskId) : null;
+  out.innerHTML = `<div class="speaker ask-answer">${fluffSVG()}<div class="dialog"><span class="tag">Fluff</span>Let me look…</div></div>`;
+  unlockAudio();
+  try {
+    const image = await askImage(roomId);
+    const open = sess ? sess.tasks.filter((x) => !x.done && (!t || x.id !== t.id)).map((x) => x.title) : [];
+    const res = await api.ask({ image, question, task: t ? { title: t.title, zone: t.zone } : null, tasks: open });
+    if (!$('#askOut')) return;
+    $('#askOut').innerHTML = `<div class="speaker ask-answer">${fluffSVG(res.found ? 'happy' : '')}<div class="dialog"><span class="tag">Fluff</span>${esc(res.answer)}</div></div>
+      ${t && !res.found ? `<div class="row"><button class="btn" data-act="ask-remove" data-id="${t.id}">Remove this chore</button><button class="btn" data-act="ask-done" data-id="${t.id}">It's already done</button></div>` : ''}
+      ${!image ? '<p class="demo-note">Fluff needs a photo to point things out. Use “Scan again” or start Coach Mode.</p>' : ''}`;
+    if (S.settings.voice) say(res.answer);
+    if (res.zone && res.zone !== 'none') {
+      if (C.el) flashZone(res.zone);
+      else { mem.askZone = res.zone; render(); setTimeout(() => { if (mem.askZone === res.zone) { mem.askZone = null; render(); } }, 10000); }
+    }
+  } catch (e) {
+    if ($('#askOut')) $('#askOut').innerHTML = `<div class="status bad">${esc(e.message || 'Fluff couldn\'t answer that. Try again.')}</div>`;
+  }
+}
+function toggleMic(btn) {
+  if (!SpeechRec) return;
+  if (askRec) { askRec.stop(); return; }
+  try {
+    askRec = new SpeechRec();
+    askRec.lang = 'en-US'; askRec.interimResults = true; askRec.maxAlternatives = 1;
+    btn.classList.add('on');
+    askRec.onresult = (e) => { const q = $('#askQ'); if (q) q.value = [...e.results].map((r) => r[0].transcript).join(''); };
+    askRec.onerror = () => {};
+    askRec.onend = () => {
+      btn.classList.remove('on'); askRec = null;
+      const q = $('#askQ'); const send = $('[data-act=ask-send]');
+      if (q && q.value.trim() && send) sendAsk(q.value, send.dataset.id || null);
+    };
+    askRec.start();
+  } catch (e) { btn.classList.remove('on'); askRec = null; toast('Voice input isn\'t available. Type your question instead.'); }
+}
+
 /* ---------- Challenges: beat-the-clock sprints with bonus sparkles ---------- */
 const CH = { active: false, kind: '', dur: 0, start: 0, end: 0, taskId: null, said: {}, timer: null, ending: false };
 const BLITZ_BONUS = 5;
@@ -1254,19 +1442,20 @@ async function startCoach(roomId) {
   const el = document.createElement('section');
   el.className = 'coach'; el.id = 'coach';
   el.setAttribute('aria-label', 'Coach Mode');
-  el.innerHTML = `<video playsinline muted autoplay></video>
+  el.innerHTML = `<div class="cam" id="cam"><video playsinline muted autoplay></video><svg class="cam-overlay" id="camOverlay" preserveAspectRatio="xMidYMid slice"></svg></div>
     <div class="hud">
       <button class="chip" data-act="coach-end">End</button>
       <button class="chip flip" data-act="coach-flip" aria-label="Switch between front and back camera"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 8h3l2-3h6l2 3h3v11H4z"/><path d="M9.5 12.5a2.7 2.7 0 0 1 4.7-1.6"/><path d="M14.5 13.5a2.7 2.7 0 0 1-4.7 1.6"/><path d="M14.4 9.6v1.6h-1.6"/><path d="M9.6 16.4v-1.6h1.6"/></svg></button>
-      <span class="chip status"><span class="dot" id="cDot"></span><span id="cStatus">Starting camera</span></span>
+      <button class="chip flip" data-act="coach-area" aria-label="Set focus area"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 7l6-3 8 4-2 11-10 1z" stroke-dasharray="3 2.4"/><circle cx="5" cy="7" r="1.6" fill="currentColor"/><circle cx="19" cy="8" r="1.6" fill="currentColor"/><circle cx="7" cy="20" r="1.6" fill="currentColor"/></svg></button>
       <span class="chip timer" id="cTime">0:00</span>
       <span class="chip score">${STAR()}<span id="cPts">0</span></span>
     </div>
+    <div class="hud2"><span class="chip status"><span class="dot" id="cDot"></span><span id="cStatus">Starting camera</span></span></div>
     <div class="ch-banner" id="chBanner" hidden aria-live="polite"><div class="ch-time" id="chTime">1:00</div><div class="ch-label" id="chLabel">Beat the clock</div></div>
     <div class="bottom">
       <div class="speaker">${fluffSVG()}<div class="dialog"><span class="tag">Fluff</span><span id="coachLine"></span></div></div>
       <div class="coach-tasks" id="cTasks"></div>
-      <div class="row"><button class="btn" data-act="ch-open" id="chBtn">Challenge</button><button class="btn sun" data-act="coach-check">Check now</button></div>
+      <div class="row"><button class="btn" data-act="ask">Ask</button><button class="btn" data-act="ch-open" id="chBtn">Challenge</button><button class="btn sun" data-act="coach-check">Check now</button></div>
     </div>`;
   document.body.appendChild(el);
   C.el = el; C.video = el.querySelector('video');
@@ -1298,10 +1487,73 @@ async function openCamera(facing) {
   if (C.stream) C.stream.getTracks().forEach((t) => t.stop());
   C.stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: { ideal: facing }, width: { ideal: 1280 }, height: { ideal: 960 } }, audio: false });
   const actual = (C.stream.getVideoTracks()[0].getSettings() || {}).facingMode || facing;
-  C.video.classList.toggle('mirror', actual === 'user');
+  C.facing = facing;
+  $('#cam').classList.toggle('mirror', actual === 'user');
   C.video.srcObject = C.stream;
   await C.video.play().catch(() => {});
   C.prev = null; C.motion = 0; C.activity = false; C.lastCheck = Date.now();
+  C.video.addEventListener('loadedmetadata', refreshArea, { once: true });
+  refreshArea();
+}
+/* Focus area in Coach Mode: saved per room and per camera, since the phone usually sits in the same spot. */
+function coachArea() {
+  const room = roomById(C.roomId);
+  return room && room.coachArea ? room.coachArea[C.facing || 'environment'] || null : null;
+}
+function refreshArea() {
+  const area = coachArea();
+  C.mask = null;
+  if (area) {
+    // Which of the 48x36 motion-detector cells fall inside the area
+    const m = new Uint8Array(48 * 36); let n = 0;
+    for (let y = 0; y < 36; y++) for (let x = 0; x < 48; x++) {
+      const px = (x + 0.5) / 48, py = (y + 0.5) / 36;
+      let inside = false;
+      for (let i = 0, j = area.length - 1; i < area.length; j = i++) {
+        const [xi, yi] = area[i], [xj, yj] = area[j];
+        if ((yi > py) !== (yj > py) && px < ((xj - xi) * (py - yi)) / (yj - yi) + xi) inside = !inside;
+      }
+      if (inside) { m[y * 48 + x] = 1; n++; }
+    }
+    if (n >= 20) { C.mask = m; C.maskCount = n; }
+  }
+  C.prev = null;
+  renderCamOverlay();
+}
+function renderCamOverlay() {
+  const ov = $('#camOverlay'); const v = C.video;
+  if (!ov || !v || !v.videoWidth) return;
+  const w = v.videoWidth, h = v.videoHeight;
+  ov.setAttribute('viewBox', `0 0 ${w} ${h}`);
+  let flash = '';
+  if (C.flashZone && C.flashZone !== 'none' && Date.now() < C.flashUntil) {
+    const i = ZONES.indexOf(C.flashZone);
+    if (i > -1) flash = `<rect x="${(i % 3) * w / 3 + 6}" y="${Math.floor(i / 3) * h / 3 + 6}" width="${w / 3 - 12}" height="${h / 3 - 12}" rx="24" fill="rgba(138,211,240,.28)" stroke="#8AD3F0" stroke-width="8"/>`;
+  }
+  ov.innerHTML = areaOverlaySVG(coachArea(), w, h, flash);
+}
+function flashZone(zone) {
+  C.flashZone = zone; C.flashUntil = Date.now() + 8000;
+  renderCamOverlay();
+  setTimeout(renderCamOverlay, 8100);
+}
+async function editCoachArea() {
+  const v = C.video;
+  if (!v || !v.videoWidth) return;
+  const room = roomById(C.roomId);
+  const mirror = $('#cam').classList.contains('mirror');
+  const c = document.createElement('canvas');
+  c.width = v.videoWidth; c.height = v.videoHeight;
+  const ctx = c.getContext('2d');
+  if (mirror) { ctx.translate(c.width, 0); ctx.scale(-1, 1); }
+  ctx.drawImage(v, 0, 0);
+  const area = await openAreaEditor({ src: c.toDataURL('image/jpeg', 0.8), w: c.width, h: c.height, mirror, initial: coachArea(),
+    tip: 'Tap points around the part of the room to clean. Fluff ignores everything outside it, from this phone spot.' });
+  if (area === undefined) return;
+  room.coachArea = room.coachArea || {};
+  room.coachArea[C.facing || 'environment'] = area;
+  save(); refreshArea();
+  coachLine(area ? 'Got it! I\'ll only watch inside that area.' : 'Okay, I\'ll watch the whole view.', false);
 }
 async function flipCamera() {
   if (!C.el || C.flipping) return;
@@ -1324,9 +1576,9 @@ function renderCoachTasks() {
   box.innerHTML = sorted.map((t) => `<button class="ctask ${t.done ? 'done' : ''}" data-act="coach-toggle" data-id="${t.id}" aria-pressed="${t.done}"><span>${esc(t.title)}</span><span class="pts">${t.points}</span></button>`).join('');
   $('#cPts').textContent = C.pts;
 }
-function grabFrame(max) {
+function grabFrame(max, masked = true) {
   const v = C.video;
-  return toJpeg(v, v.videoWidth, v.videoHeight, max, 0.8);
+  return toJpeg(v, v.videoWidth, v.videoHeight, max, 0.8, masked ? coachArea() : null);
 }
 function setStatus(kind, text) {
   const key = kind + text;
@@ -1342,11 +1594,12 @@ function coachTick() {
   const d = C.ctx.getImageData(0, 0, 48, 36).data;
   const g = new Uint8Array(48 * 36);
   let sum = 0;
+  const mask = C.mask;
   for (let i = 0; i < g.length; i++) {
     g[i] = (d[i * 4] * 3 + d[i * 4 + 1] * 6 + d[i * 4 + 2]) / 10;
-    if (C.prev) sum += Math.abs(g[i] - C.prev[i]);
+    if (C.prev && (!mask || mask[i])) sum += Math.abs(g[i] - C.prev[i]);
   }
-  if (C.prev) C.motion = C.motion * 0.5 + (sum / g.length) * 0.5;
+  if (C.prev) C.motion = C.motion * 0.5 + (sum / (mask ? C.maskCount : g.length)) * 0.5;
   C.prev = g;
   const now = Date.now();
   if (C.motion > MOVE) { C.lastMotion = now; C.activity = true; C.activeMs += 200; C.nudges = 0; }
@@ -1454,6 +1707,27 @@ document.addEventListener('click', (e) => {
     case 'coach-end': stopCoach(); break;
     case 'coach-check': unlockAudio(); runCheck(true); break;
     case 'coach-flip': flipCamera(); break;
+    case 'coach-area': editCoachArea(); break;
+    case 'ask': openAsk(); break;
+    case 'ask-task': e.stopPropagation(); openAsk(id); break;
+    case 'ask-send': sendAsk($('#askQ').value, id || null); break;
+    case 'ask-chip': $('#askQ').value = a.dataset.q; sendAsk(a.dataset.q, id || null); break;
+    case 'ask-mic': toggleMic(a); break;
+    case 'ask-remove': {
+      const rid = askRoomId(); const sess = S.sessions[rid];
+      const t = sess && sess.tasks.find((x) => x.id === id);
+      if (t) { if (t.done) undoTask(rid, t); sess.tasks = sess.tasks.filter((x) => x.id !== id); mem.selected = null; save(); }
+      closeSheet(); toast('Chore removed'); if (C.el) renderCoachTasks(); render();
+      break;
+    }
+    case 'ask-done': {
+      const rid = askRoomId(); const sess = S.sessions[rid];
+      const t = sess && sess.tasks.find((x) => x.id === id);
+      closeSheet();
+      if (t && !t.done) { const g = awardTask(rid, t, 'hand'); if (C.el) { C.pts += g; renderCoachTasks(); } pop(`+${g} ✦`); chime(); }
+      render();
+      break;
+    }
     case 'ch-open': if (CH.active) { resetChallenge(); coachLine('Challenge stopped. No worries!', false); } else openChallengePicker(); break;
     case 'ch-start': closeSheet(); startChallenge('blitz', Number(a.dataset.sec)); break;
     case 'ch-start-custom': {
@@ -1595,6 +1869,7 @@ document.addEventListener('keydown', (e) => {
   if (e.key === 'Enter' && e.target.matches('#newPlayer')) $('[data-act="add-player"]').click();
   if (e.key === 'Enter' && e.target.matches('#tTitle')) $('[data-act="save-task"]').click();
   if (e.key === 'Enter' && e.target.matches('#rName')) $('[data-act="save-room"]').click();
+  if (e.key === 'Enter' && e.target.matches('#askQ')) $('[data-act="ask-send"]').click();
 });
 
 render();

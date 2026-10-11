@@ -23,6 +23,7 @@ Rules:
 - Each task names the specific visible object and, when it's obvious, where it should go. Example: "Put the cereal box back in the pantry".
 - Group small identical items into one task, such as "Pick up the 6 toy cars".
 - Skip anything that already looks tidy. Do not mention or describe any people in the photo.
+- Solid gray areas are outside the part of the room being cleaned. Ignore anything in them.
 - Order tasks in a sensible cleaning flow: trash first, then things to put away, then surfaces, then floors.
 - Points reflect effort: 2-5 for a quick grab, 6-12 for a few minutes of work, 13-25 for a big job.
 - "zone" is the ninth of the photo where the item sits: one of ${ZONES.join(', ')}.
@@ -35,6 +36,7 @@ const VERIFY_SYSTEM = `You check progress in a family chore game. You get the op
 Rules:
 - The camera may have moved a little between photos. Compare the same areas, using each task's zone as a hint.
 - A person may be in the AFTER photo. Ignore them and don't describe them.
+- Solid gray areas are outside the part of the room being cleaned. Ignore anything in them.
 - Mark a task done only when the AFTER photo clearly shows it is finished. If the area is hidden, blocked, or out of frame, do not mark it done.
 - Be fair but encouraging. Never mark a task done just to be nice.
 
@@ -78,6 +80,27 @@ const PROGRESS_SCHEMA = {
   additionalProperties: false
 };
 
+const ASK_SYSTEM = `You are Fluff, a friendly helper in a family chore game. Someone is cleaning a room and has a question, usually that they can't find the item a chore mentions.
+
+Rules:
+- Answer in one or two short sentences (max 35 words). Your answer is read aloud, so keep it natural and warm.
+- To help them find something, describe where it is using big, easy landmarks: left or right side, near the couch, on the bottom shelf, next to the lamp. Mention its color or shape if that helps.
+- If you can't see the item in the photo, say so honestly. It may already be put away, or the chore may be a mistake they can delete.
+- If no photo is provided, answer from the chore list alone and say you'd need a photo to point to it.
+- Solid gray areas are outside the part of the room being cleaned. Ignore anything in them.
+- Never describe the people in the photo.
+- "zone" is the ninth of the photo where the item is, or "none" if you can't see it or there's no photo.`;
+const ASK_SCHEMA = {
+  type: 'object',
+  properties: {
+    answer: { type: 'string', description: 'One or two short spoken sentences, max 35 words.' },
+    zone: { type: 'string', enum: [...ZONES, 'none'] },
+    found: { type: 'boolean', description: 'Whether the item they asked about is visible in the photo.' }
+  },
+  required: ['answer', 'zone', 'found'],
+  additionalProperties: false
+};
+
 export default {
   async fetch(request, env) {
     const cors = corsHeaders(request, env);
@@ -115,6 +138,7 @@ export default {
     try {
       if (url.pathname === '/analyze') return reply(await analyze(body, env));
       if (url.pathname === '/verify') return reply(await verify(body, env));
+      if (url.pathname === '/ask') return reply(await ask(body, env));
       return reply({ error: 'Not found' }, 404);
     } catch (err) {
       return reply({ error: err.message || 'The AI helper hit a problem.' }, err.status || 502);
@@ -157,6 +181,18 @@ async function verify(body, env) {
     blocked: (Array.isArray(j.blocked) ? j.blocked : []).map(String).filter((id) => ids.has(id)),
     feedback: String(j.feedback || '').slice(0, 140)
   };
+}
+
+async function ask(body, env) {
+  const question = String(body.question || '').trim().slice(0, 400);
+  if (!question) throw badRequest('Ask Fluff a question first.');
+  const content = [];
+  if (isB64(body.image)) content.push({ type: 'text', text: 'Photo of the room right now:' }, imageBlock(body.image));
+  const task = body.task && body.task.title ? `The chore they're asking about: "${String(body.task.title).slice(0, 120)}"${body.task.zone ? ` (listed in the ${body.task.zone} part of the photo)` : ''}.\n` : '';
+  const others = Array.isArray(body.tasks) ? body.tasks.slice(0, 20).map((t) => `- ${String(t).slice(0, 100)}`).join('\n') : '';
+  content.push({ type: 'text', text: `${task}${others ? `Other open chores:\n${others}\n` : ''}Their question: ${question}` });
+  const j = await askClaude(env, env.MODEL_ASK || 'claude-sonnet-5-5', ASK_SYSTEM, content, ASK_SCHEMA, 800);
+  return { answer: String(j.answer || '').slice(0, 300), zone: pickEnum(j.zone, [...ZONES, 'none'], 'none'), found: !!j.found };
 }
 
 /* ---------- Fluff's voice (ElevenLabs) ---------- */

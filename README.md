@@ -57,6 +57,11 @@ Want a voice that's truly Fluff's? Use ElevenLabs' voice design tool, save the v
 
 The phone compares tiny 48×36 snapshots of the camera feed five times a second, entirely on the device. When it sees movement, then stillness for about 2.5 seconds, and enough time has passed since the last check, it sends one photo to the helper along with the before photo and the open chores. Claude replies with which chores are clearly done. Anything blocked or out of view stays open, and you can always tap a chore to mark it done yourself.
 
+## Ask Fluff and focus areas
+
+- **Ask Fluff:** tap a chore, then **Where is it?**, or tap **Ask** in Coach Mode. Type or use the mic. Fluff looks at the current camera view (or the room photo), answers out loud, and highlights the spot. If it can't find the item, you can remove the chore right there. Uses Claude Sonnet by default; set `MODEL_ASK` to change it.
+- **Focus areas:** before a photo scan, choose **Draw focus area**, or in Coach Mode tap the dotted-shape button. Tap points around the part of the room that counts. Everything outside is grayed out before any image goes to the AI, and movement there doesn't trigger checks. Coach Mode areas are saved per room and per camera; photo areas are saved per room and offered on the next scan.
+
 ## Privacy
 
 - Photos go to your helper and on to Claude for that one request. Neither the app nor the helper saves them.
