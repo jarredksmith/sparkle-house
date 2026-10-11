@@ -209,6 +209,10 @@ h1,h2,h3{font-family:var(--display);line-height:1.1;margin:0}
 /* coach mode */
 .coach{position:fixed;inset:0;z-index:70;background:#1d2a25;color:#fff;display:flex;flex-direction:column}
 .coach video{position:absolute;inset:0;width:100%;height:100%;object-fit:cover}
+.coach video.mirror{transform:scaleX(-1)}
+.coach .chip{padding:7px 10px;font-size:15px;gap:6px}
+.chip.flip{padding:7px 9px}
+.chip.flip svg{width:20px;height:20px}
 .coach .hud{position:relative;display:flex;align-items:center;gap:6px;padding:calc(var(--safe-t) + 10px) 14px 0}
 .chip{background:rgba(255,255,255,.92);color:var(--ink);border-radius:999px;padding:7px 14px;font-weight:800;display:flex;align-items:center;gap:8px;border:0}
 .chip .dot{flex:none;width:10px;height:10px;border-radius:50%;background:var(--grass)}
@@ -293,7 +297,7 @@ const fresh = () => ({
     { id: 'bathroom', name: 'Bathroom', emoji: '🛁', shine: 50, shineAt: Date.now() }
   ],
   sessions: {},
-  settings: { workerUrl: '', token: '', sound: true, voice: false, voiceId: '', minGap: 20 },
+  settings: { workerUrl: '', token: '', sound: true, voice: false, voiceId: '', minGap: 20, camera: 'environment' },
   household: { lifetime: 0 },
   unlocked: [],
   streak: { count: 0, last: '' },
@@ -984,6 +988,7 @@ async function startCoach(roomId) {
   el.innerHTML = `<video playsinline muted autoplay></video>
     <div class="hud">
       <button class="chip" data-act="coach-end">End</button>
+      <button class="chip flip" data-act="coach-flip" aria-label="Switch between front and back camera"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 8h3l2-3h6l2 3h3v11H4z"/><path d="M9.5 12.5a2.7 2.7 0 0 1 4.7-1.6"/><path d="M14.5 13.5a2.7 2.7 0 0 1-4.7 1.6"/><path d="M14.4 9.6v1.6h-1.6"/><path d="M9.6 16.4v-1.6h1.6"/></svg></button>
       <span class="chip status"><span class="dot" id="cDot"></span><span id="cStatus">Starting camera</span></span>
       <span class="chip timer" id="cTime">0:00</span>
       <span class="chip score">${STAR()}<span id="cPts">0</span></span>
@@ -1000,10 +1005,7 @@ async function startCoach(roomId) {
   coachLine(firstTime ? 'Prop me up where I can see the whole room, then get to work. I\'ll check whenever you step out of the way.' : `Let's make the ${room.name.toLowerCase()} sparkle! I'll check when you step back.`);
   S.coachTipSeen = true; save();
   try {
-    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) throw new Error('nocam');
-    C.stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: { ideal: 'environment' }, width: { ideal: 1280 }, height: { ideal: 960 } }, audio: false });
-    C.video.srcObject = C.stream;
-    await C.video.play().catch(() => {});
+    await openCamera(S.settings.camera);
   } catch (e) {
     $('#cStatus').textContent = 'No camera';
     coachLine('I can\'t see through the camera. Allow camera access for this app in your phone\'s settings, then try again.', false);
@@ -1019,6 +1021,29 @@ async function startCoach(roomId) {
     const s = Math.floor((Date.now() - C.start) / 1000);
     const t = $('#cTime'); if (t) t.textContent = `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
   }, 1000);
+}
+async function openCamera(facing) {
+  if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) throw new Error('nocam');
+  if (C.stream) C.stream.getTracks().forEach((t) => t.stop());
+  C.stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: { ideal: facing }, width: { ideal: 1280 }, height: { ideal: 960 } }, audio: false });
+  const actual = (C.stream.getVideoTracks()[0].getSettings() || {}).facingMode || facing;
+  C.video.classList.toggle('mirror', actual === 'user');
+  C.video.srcObject = C.stream;
+  await C.video.play().catch(() => {});
+  C.prev = null; C.motion = 0; C.activity = false; C.lastCheck = Date.now();
+}
+async function flipCamera() {
+  if (!C.el || C.flipping) return;
+  C.flipping = true;
+  const next = S.settings.camera === 'user' ? 'environment' : 'user';
+  try {
+    await openCamera(next);
+    S.settings.camera = next; save();
+    coachLine(next === 'user' ? 'Front camera on. Now you can see what I see!' : 'Back camera on.', false);
+  } catch (e) {
+    coachLine('I couldn\'t switch cameras. Trying the other one again.', false);
+    try { await openCamera(S.settings.camera); } catch (err) { /* stays off */ }
+  } finally { C.flipping = false; }
 }
 function renderCoachTasks() {
   const sess = S.sessions[C.roomId];
@@ -1147,6 +1172,7 @@ document.addEventListener('click', (e) => {
     case 'coach': startCoach(ui.roomId); break;
     case 'coach-end': stopCoach(); break;
     case 'coach-check': unlockAudio(); runCheck(true); break;
+    case 'coach-flip': flipCamera(); break;
     case 'coach-toggle': {
       const sess = S.sessions[C.roomId];
       const t = sess && sess.tasks.find((x) => x.id === id);
