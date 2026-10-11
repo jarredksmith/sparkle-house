@@ -113,7 +113,11 @@ h1,h2,h3{font-family:var(--display);line-height:1.1;margin:0}
 .bar i{display:block;height:100%;background:linear-gradient(90deg,var(--grass),#55B97C);border-radius:999px;transition:width .4s}
 .tasks{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:10px}
 .task{display:flex;align-items:center;gap:12px;background:var(--paper);border-radius:18px;padding:12px 12px 12px 10px;box-shadow:0 3px 0 var(--ledge);border:3px solid transparent;cursor:pointer}
-.task.sel{border-color:var(--sun)}
+.task.sel{border-color:var(--sun);flex-wrap:wrap}
+.task-actions{flex-basis:100%;display:flex;gap:8px;padding:8px 0 0 50px}
+.task-actions .btn{flex:0 1 auto;padding:8px 16px;font-size:15px;box-shadow:0 3px 0 var(--ledge);background:var(--meadow)}
+.task-actions .btn.danger{color:#C2405E}
+.edit-hint{text-align:center;font-size:14px;font-weight:700;color:var(--ink-soft);margin:10px 0 0}
 .tick{width:38px;height:38px;flex:none;border-radius:50%;border:3px solid var(--grass);background:#fff;display:grid;place-items:center;padding:0}
 .tick svg{width:20px;height:20px;opacity:0}
 .task.done .tick{background:var(--grass)}
@@ -766,8 +770,10 @@ function renderRoom() {
         <button class="tick" data-act="toggle" data-id="${t.id}" aria-pressed="${t.done}" aria-label="${t.done ? 'Undo' : 'Mark done'}: ${esc(t.title)}">${CHECK}</button>
         <div class="tbody"><div class="ttl">${esc(t.title)}</div>${t.detail && !t.done ? `<div class="tdet">${esc(t.detail)}</div>` : ''}${by ? `<div class="by">${esc(by.name)}${t.how === 'coach' || t.how === 'photo' ? ', checked by Fluff' : ''}</div>` : ''}</div>
         <div class="tmeta"><span class="pts">${t.points} ✦</span>${t.minutes ? `<span class="min">${t.minutes} min</span>` : ''}</div>
+        ${mem.selected === t.id ? `<div class="task-actions"><button class="btn" data-act="edit-task" data-id="${t.id}">Edit</button><button class="btn danger" data-act="delete-task" data-id="${t.id}">Delete</button></div>` : ''}
       </li>`;
     }).join('')}</ul>
+    <p class="edit-hint">Tap a chore to edit or delete it.</p>
     <div class="row" style="margin-top:14px;justify-content:center;flex-wrap:wrap">
       <button class="btn text" data-act="add-task">Add a task</button>
       <button class="btn text" data-act="photo" data-src="cam" data-mode="rescan">Scan again</button>
@@ -887,13 +893,25 @@ function openAddRoom() {
     w.dataset.emo = pick;
   });
 }
+function pointsOptions(cur) {
+  const sizes = [[3, 'Quick grab'], [6, 'A few minutes'], [10, 'Real effort'], [18, 'Big job']];
+  if (!sizes.some(([v]) => v === cur)) sizes.push([cur, 'Current']);
+  return sizes.sort((a, b) => a[0] - b[0]).map(([v, l]) => `<option value="${v}" ${v === cur ? 'selected' : ''}>${l}, ${v} ✦</option>`).join('');
+}
 function openAddTask() {
   openSheet(`<h2>Add a task</h2>
     <label class="field">What needs doing?<input id="tTitle" placeholder="Wipe down the counters" maxlength="90"></label>
-    <label class="field">How big is it?<select id="tPts">
-      <option value="3">Quick grab, 3 ✦</option><option value="6" selected>A few minutes, 6 ✦</option>
-      <option value="10">Real effort, 10 ✦</option><option value="18">Big job, 18 ✦</option></select></label>
+    <label class="field">How big is it?<select id="tPts">${pointsOptions(6)}</select></label>
     <button class="btn primary" data-act="save-task" style="width:100%">Add task</button>`);
+}
+function openEditTask(id) {
+  const t = S.sessions[ui.roomId].tasks.find((x) => x.id === id);
+  if (!t) return;
+  openSheet(`<h2>Edit task</h2>
+    <label class="field">What needs doing?<input id="tTitle" maxlength="90" value="${esc(t.title)}"></label>
+    <label class="field">Tip (optional)<input id="tDetail" maxlength="120" value="${esc(t.detail || '')}"></label>
+    <label class="field">How big is it?<select id="tPts" ${t.done ? 'disabled' : ''}>${pointsOptions(t.points)}</select>${t.done ? '<small>Points are locked because this chore is already done.</small>' : ''}</label>
+    <div class="row"><button class="btn primary" data-act="update-task" data-id="${t.id}">Save changes</button><button class="btn" data-act="close-sheet">Cancel</button></div>`);
 }
 function openFinish() {
   const room = roomById(ui.roomId);
@@ -1191,6 +1209,31 @@ document.addEventListener('click', (e) => {
       sess.tasks.push({ id: uid(), title, detail: '', zone: null, points: Number($('#tPts').value), minutes: 0, category: 'other', done: false });
       sess.sweep = false;
       save(); closeSheet(); render();
+      break;
+    }
+    case 'edit-task': e.stopPropagation(); openEditTask(id); break;
+    case 'update-task': {
+      const t = S.sessions[ui.roomId].tasks.find((x) => x.id === id);
+      const title = $('#tTitle').value.trim();
+      if (!t) { closeSheet(); break; }
+      if (!title) { $('#tTitle').focus(); break; }
+      t.title = title;
+      t.detail = $('#tDetail').value.trim();
+      if (!t.done) t.points = Number($('#tPts').value);
+      save(); closeSheet(); render();
+      break;
+    }
+    case 'delete-task': {
+      e.stopPropagation();
+      const sess = S.sessions[ui.roomId];
+      const t = sess.tasks.find((x) => x.id === id);
+      if (!t) break;
+      if (!confirm(t.done ? `Delete "${t.title}"? The ${t.points} sparkles it earned will be taken back.` : `Delete "${t.title}"?`)) break;
+      if (t.done) undoTask(ui.roomId, t);
+      sess.tasks = sess.tasks.filter((x) => x.id !== id);
+      mem.selected = null;
+      save(); render();
+      toast('Task deleted');
       break;
     }
     case 'finish': openFinish(); break;
