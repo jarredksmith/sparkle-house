@@ -293,7 +293,7 @@ const fresh = () => ({
     { id: 'bathroom', name: 'Bathroom', emoji: '🛁', shine: 50, shineAt: Date.now() }
   ],
   sessions: {},
-  settings: { workerUrl: '', token: '', sound: true, voice: false, minGap: 20 },
+  settings: { workerUrl: '', token: '', sound: true, voice: false, voiceId: '', minGap: 20 },
   household: { lifetime: 0 },
   unlocked: [],
   streak: { count: 0, last: '' },
@@ -386,15 +386,42 @@ function chime() {
     o.start(t + dt); o.stop(t + dt + 0.55);
   });
 }
-function speak(text) {
-  if (!S.settings.voice || !('speechSynthesis' in window) || !text) return;
+/* Voices: the phone's downloadable Enhanced/Premium voices sound far more natural,
+   so pick one of those when it's installed, unless the person chose a voice. */
+const hasSpeech = 'speechSynthesis' in window;
+function voiceQuality(v) {
+  const id = (v.voiceURI + ' ' + v.name).toLowerCase();
+  if (id.includes('premium')) return 3;
+  if (id.includes('enhanced')) return 2;
+  return v.localService ? 1 : 0;
+}
+function englishVoices() {
+  if (!hasSpeech) return [];
+  return speechSynthesis.getVoices()
+    .filter((v) => /^en([-_]|$)/i.test(v.lang))
+    .sort((a, b) => voiceQuality(b) - voiceQuality(a) || (b.lang === 'en-US') - (a.lang === 'en-US') || a.name.localeCompare(b.name));
+}
+function pickVoice(id = S.settings.voiceId) {
+  const list = englishVoices();
+  return list.find((v) => v.voiceURI === id) || list[0] || null;
+}
+function voiceLabel(v) {
+  const q = voiceQuality(v);
+  return `${v.name.replace(/\s*\((premium|enhanced)\)/i, '')}${q === 3 ? ' (Premium)' : q === 2 ? ' (Enhanced)' : ''}, ${v.lang}`;
+}
+if (hasSpeech) { speechSynthesis.getVoices(); speechSynthesis.addEventListener('voiceschanged', () => speechSynthesis.getVoices()); }
+function say(text, voiceId) {
+  if (!hasSpeech || !text) return;
   try {
     speechSynthesis.cancel();
     const u = new SpeechSynthesisUtterance(text);
-    u.rate = 1.05; u.pitch = 1.25;
+    const v = pickVoice(voiceId);
+    if (v) { u.voice = v; u.lang = v.lang; }
+    u.rate = 1.0; u.pitch = 1.05;
     speechSynthesis.speak(u);
   } catch (e) { /* ignore */ }
 }
+function speak(text) { if (S.settings.voice) say(text); }
 let typeToken = 0;
 const typed = {};
 function typeInto(el, text) {
@@ -734,6 +761,11 @@ function openSettings() {
     <label class="field"><span>Wait at least <span id="gapVal">${st.minGap}</span> seconds between checks</span><input id="sGap" type="range" min="10" max="60" step="5" value="${st.minGap}"></label>
     <label class="toggle">Sound when chores are done<input id="sSound" type="checkbox" ${st.sound ? 'checked' : ''}></label>
     <label class="toggle">Fluff talks out loud<input id="sVoice" type="checkbox" ${st.voice ? 'checked' : ''}></label>
+    ${hasSpeech ? `<label class="field">Fluff's voice<select id="sVoiceId">${(() => {
+      const list = englishVoices(); const cur = pickVoice();
+      return list.length ? list.map((v) => `<option value="${esc(v.voiceURI)}" ${cur && cur.voiceURI === v.voiceURI ? 'selected' : ''}>${esc(voiceLabel(v))}</option>`).join('') : '<option value="">Default voice</option>';
+    })()}</select><small>Premium and Enhanced voices sound most natural. Download them in your phone's Settings under Read &amp; Speak (or Spoken Content), then reopen this app.</small></label>
+    <button class="btn small" data-act="test-voice">Play sample</button>` : ''}
     <h3>Rooms</h3>
     <ul class="plist">${S.rooms.map((r) => `<li><span style="font-size:24px">${esc(r.emoji)}</span><span style="flex:1">${esc(r.name)}</span><button class="btn text" data-act="del-room" data-id="${r.id}">Remove</button></li>`).join('')}</ul>
     <h3>Privacy</h3>
@@ -1082,9 +1114,11 @@ document.addEventListener('click', (e) => {
       S.settings.minGap = Number($('#sGap').value);
       S.settings.sound = $('#sSound').checked;
       S.settings.voice = $('#sVoice').checked;
+      if ($('#sVoiceId')) S.settings.voiceId = $('#sVoiceId').value;
       save(); closeSheet(); toast('Settings saved'); render();
       break;
     }
+    case 'test-voice': say('Hi! I\'m Fluff. Let\'s make this room sparkle!', $('#sVoiceId') ? $('#sVoiceId').value : ''); break;
     case 'add-room': openAddRoom(); break;
     case 'save-room': {
       const name = $('#rName').value.trim();
