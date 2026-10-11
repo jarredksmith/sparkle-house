@@ -301,7 +301,7 @@ const fresh = () => ({
     { id: 'bathroom', name: 'Bathroom', emoji: '🛁', shine: 50, shineAt: Date.now() }
   ],
   sessions: {},
-  settings: { workerUrl: '', token: '', sound: true, voice: false, voiceId: '', minGap: 20, camera: 'environment' },
+  settings: { workerUrl: '', token: '', sound: true, voice: false, voiceId: '', minGap: 20, camera: 'environment', pep: 'light' },
   household: { lifetime: 0 },
   unlocked: [],
   streak: { count: 0, last: '' },
@@ -522,6 +522,7 @@ function checkUnlocks() {
   DECOR.forEach((d) => {
     if (S.household.lifetime >= d.c && !S.unlocked.includes(d.id)) {
       S.unlocked.push(d.id);
+      (mem.newUnlocks = mem.newUnlocks || []).push(d);
       toast(`Unlocked: ${d.e} ${d.n}`, 'win');
     }
   });
@@ -843,6 +844,11 @@ function openSettings() {
     <div id="sStatus"></div>
     <h3>Coach Mode</h3>
     <label class="field"><span>Wait at least <span id="gapVal">${st.minGap}</span> seconds between checks</span><input id="sGap" type="range" min="10" max="60" step="5" value="${st.minGap}"></label>
+    <label class="field">Fluff's pep talk<select id="sPep">
+      <option value="off" ${st.pep === 'off' ? 'selected' : ''}>Off, results only</option>
+      <option value="light" ${st.pep === 'light' ? 'selected' : ''}>Light, every minute or so</option>
+      <option value="chatty" ${st.pep === 'chatty' ? 'selected' : ''}>Chatty, keeps you moving</option>
+    </select><small>Cheers you on, nudges you when you stall, and tracks your sparkles. Chatty uses more AI voice credits.</small></label>
     <label class="toggle">Sound when chores are done<input id="sSound" type="checkbox" ${st.sound ? 'checked' : ''}></label>
     <label class="toggle">Fluff talks out loud<input id="sVoice" type="checkbox" ${st.voice ? 'checked' : ''}></label>
     <label class="field">Fluff's voice<select id="sVoiceId">${voiceOptions()}</select><small id="voiceHint">${voiceHint()}</small></label>
@@ -989,7 +995,106 @@ const MOVE = 6;        // average pixel change that counts as "someone is workin
 const CALM = 3.5;
 const SETTLE_MS = 2500; // how long the scene must stay still before a check
 const C = { el: null, stream: null, video: null, loop: null, clock: null, wake: null, roomId: null, start: 0, pts: 0, motion: 0, lastMotion: 0, activity: false, lastCheck: 0, checking: false, prev: null, ctx: null, lastStatus: '' };
-function coachLine(text, voice = true) { typeInto($('#coachLine'), text); if (voice) speak(text); }
+function coachLine(text, voice = true) { C.lastSpoke = Date.now(); typeInto($('#coachLine'), text); if (voice) speak(text); }
+
+/* ---------- Pep talk: encouragement driven by what's happening in Coach Mode ---------- */
+const PEP_LINES = {
+  work: [
+    'You\'re really moving, {name}! Love the hustle.',
+    'Look at you go. This room doesn\'t stand a chance.',
+    'Nonstop! That\'s how sparkles get earned.',
+    'Great pace, {name}. Keep that energy going.',
+    '{mins} of hard work so far. I see you!',
+    'The room is already looking different. Keep it up!'
+  ],
+  nudge: [
+    'Still with me, {name}? Quick one: {task}. That\'s {tp} sparkles.',
+    'Let\'s keep rolling. Next up: {task}, worth {tp} sparkles.',
+    'Break\'s over! Easy win: {task}.',
+    'Ready for the next one? Try this: {task}.'
+  ],
+  nudgeAgain: [
+    'Come on, {name}, just one more! {Task}. It only takes about {tm}.',
+    'Don\'t leave me hanging! {left} to go. Quickest one: {task}.',
+    '{pts} sparkles so far. Let\'s make it more! Start here: {task}.'
+  ],
+  recap: [
+    '{mins} in, {done} done, and {pts} sparkles earned. Nice!',
+    'Check-in: {done} down, {left} to go. You\'ve got this, {name}.',
+    '{pts} sparkles this session so far. Keep stacking them!'
+  ],
+  half: ['Halfway there! The second half always goes faster.', 'That\'s half the list, {name}! Keep it up.'],
+  last: ['Just one chore left: {task}. Finish strong!', 'One to go! {Task}, and this room is done.'],
+  near: ['Only {need} sparkles until you unlock the {item}!', 'You\'re {need} sparkles away from the {item}. Keep going!'],
+  unlock: ['You just unlocked the {item}! It\'s waiting on your decor shelf.', 'New decor! The {item} is yours, {name}.']
+};
+const PEP_TIMING = {
+  light: { gap: 45000, idle: 70000, work: 35000, recap: 180000 },
+  chatty: { gap: 25000, idle: 40000, work: 20000, recap: 120000 }
+};
+const plural = (n, word) => `${n} ${word}${n === 1 ? '' : 's'}`;
+function pepVars() {
+  const sess = S.sessions[C.roomId];
+  const open = sess ? sess.tasks.filter((t) => !t.done) : [];
+  const quick = [...open].sort((a, b) => (a.minutes || 99) - (b.minutes || 99) || a.points - b.points)[0];
+  const secs = Math.floor((Date.now() - C.start) / 1000);
+  const p = player();
+  return {
+    name: p ? p.name : 'friend',
+    mins: secs < 60 ? 'Less than a minute' : plural(Math.floor(secs / 60), 'minute'),
+    task: quick ? quick.title.replace(/[.!]$/, '').replace(/^\w/, (c) => c.toLowerCase()) : 'the next chore',
+    Task: quick ? quick.title.replace(/[.!]$/, '') : 'The next chore',
+    tp: quick ? quick.points : 0,
+    tm: quick && quick.minutes ? plural(quick.minutes, 'minute') : 'a minute',
+    left: plural(open.length, 'chore'),
+    done: plural(sess ? sess.tasks.length - open.length : 0, 'chore'),
+    pts: C.pts
+  };
+}
+function pepSay(kind, extra = {}) {
+  const pool = PEP_LINES[kind];
+  C.pepLast = C.pepLast || {};
+  let i = Math.floor(Math.random() * pool.length);
+  if (pool.length > 1 && i === C.pepLast[kind]) i = (i + 1) % pool.length;
+  C.pepLast[kind] = i;
+  const vars = { ...pepVars(), ...extra };
+  let line = pool[i].replace(/\{(\w+)\}/g, (_, k) => vars[k] ?? '');
+  line = line.charAt(0).toUpperCase() + line.slice(1);
+  C.lastPepAt = Date.now();
+  coachLine(line);
+}
+function pepTick() {
+  const mode = S.settings.pep;
+  const T = PEP_TIMING[mode];
+  const sess = S.sessions[C.roomId];
+  if (!T || !C.el || C.checking || !sess || !C.stream) return;
+  const open = sess.tasks.filter((t) => !t.done);
+  if (!open.length) return;
+  const now = Date.now();
+  if (now - (C.lastSpoke || 0) < 8000 || now - (C.lastPepAt || 0) < T.gap) return;
+  const idle = now - (C.lastMotion || C.start);
+  if (C.nudges < 3 && idle > T.idle * (C.nudges + 1)) { pepSay(C.nudges ? 'nudgeAgain' : 'nudge'); C.nudges++; return; }
+  if (C.activeMs >= T.work) { pepSay('work'); C.activeMs = 0; return; }
+  if (now >= C.nextRecap && open.length < sess.tasks.length) { pepSay('recap'); C.nextRecap = now + T.recap; }
+}
+function pepAfterAward() {
+  if (S.settings.pep === 'off' || !C.el) return;
+  const sess = S.sessions[C.roomId];
+  if (!sess) return;
+  const open = sess.tasks.filter((t) => !t.done).length;
+  if (!open) return; // the all-done celebration covers it
+  setTimeout(() => {
+    if (!C.el || C.checking) return;
+    const unlocked = (mem.newUnlocks || []).shift();
+    if (unlocked) return pepSay('unlock', { item: unlocked.n.toLowerCase() });
+    const left = sess.tasks.filter((t) => !t.done).length;
+    if (left === 1 && !C.ms.last) { C.ms.last = true; return pepSay('last'); }
+    if (left <= sess.tasks.length / 2 && !C.ms.half) { C.ms.half = true; return pepSay('half'); }
+    const next = DECOR.find((d) => !S.unlocked.includes(d.id));
+    const need = next ? next.c - S.household.lifetime : 99;
+    if (next && need > 0 && need <= 20 && C.ms.near !== next.id) { C.ms.near = next.id; pepSay('near', { need, item: next.n.toLowerCase() }); }
+  }, 4500);
+}
 function coachFluff(happy) {
   const f = C.el && C.el.querySelector('.bottom .fluff');
   if (!f) return;
@@ -999,7 +1104,9 @@ function coachFluff(happy) {
 async function startCoach(roomId) {
   unlockAudio();
   const room = roomById(roomId);
-  Object.assign(C, { roomId, start: Date.now(), pts: 0, motion: 0, lastMotion: 0, activity: false, lastCheck: Date.now(), checking: false, prev: null, lastStatus: '' });
+  Object.assign(C, { roomId, start: Date.now(), pts: 0, motion: 0, lastMotion: 0, activity: false, lastCheck: Date.now(), checking: false, prev: null, lastStatus: '',
+    lastSpoke: 0, lastPepAt: Date.now(), activeMs: 0, nudges: 0, nextRecap: Date.now() + (PEP_TIMING[S.settings.pep] || PEP_TIMING.light).recap, ms: {}, pepLast: {} });
+  mem.newUnlocks = [];
   const el = document.createElement('section');
   el.className = 'coach'; el.id = 'coach';
   el.setAttribute('aria-label', 'Coach Mode');
@@ -1036,6 +1143,7 @@ async function startCoach(roomId) {
   if (!mem.before[roomId]) setTimeout(() => { if (C.video && C.video.videoWidth) { const f = grabFrame(768); mem.before[roomId] = { dataUrl: f.dataUrl, small: f.b64 }; } }, 1500);
   C.loop = setInterval(coachTick, 200);
   C.clock = setInterval(() => {
+    pepTick();
     const s = Math.floor((Date.now() - C.start) / 1000);
     const t = $('#cTime'); if (t) t.textContent = `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
   }, 1000);
@@ -1096,7 +1204,8 @@ function coachTick() {
   if (C.prev) C.motion = C.motion * 0.5 + (sum / g.length) * 0.5;
   C.prev = g;
   const now = Date.now();
-  if (C.motion > MOVE) { C.lastMotion = now; C.activity = true; }
+  if (C.motion > MOVE) { C.lastMotion = now; C.activity = true; C.activeMs += 200; C.nudges = 0; }
+  else if (now - C.lastMotion > 5000) C.activeMs = 0;
   const gapLeft = Math.ceil((S.settings.minGap * 1000 - (now - C.lastCheck)) / 1000);
   if (C.checking) return setStatus('checking', 'Checking…');
   if (C.motion > MOVE) return setStatus('moving', 'You\'re working');
@@ -1122,6 +1231,7 @@ async function runCheck(manual) {
       C.pts += r.pts;
       pop(`+${r.pts} ✦`); chime(); coachFluff(true);
       coachLine(res.feedback || 'Nice work!');
+      pepAfterAward();
     } else if (manual) {
       coachLine(res.feedback || 'No changes spotted yet. Keep going!');
     } else if (res.feedback) {
@@ -1196,7 +1306,7 @@ document.addEventListener('click', (e) => {
       const t = sess && sess.tasks.find((x) => x.id === id);
       if (!t) break;
       if (t.done) { if (t.how === 'hand') { C.pts = Math.max(0, C.pts - t.points); undoTask(C.roomId, t); } }
-      else { const g = awardTask(C.roomId, t, 'hand'); C.pts += g; pop(`+${g} ✦`); chime(); coachFluff(true); }
+      else { const g = awardTask(C.roomId, t, 'hand'); C.pts += g; pop(`+${g} ✦`); chime(); coachFluff(true); pepAfterAward(); }
       renderCoachTasks();
       if (sess.tasks.every((x) => x.done)) coachDone();
       break;
@@ -1276,6 +1386,7 @@ document.addEventListener('click', (e) => {
       S.settings.workerUrl = $('#sUrl').value.trim();
       S.settings.token = $('#sToken').value.trim();
       S.settings.minGap = Number($('#sGap').value);
+      S.settings.pep = $('#sPep').value;
       S.settings.sound = $('#sSound').checked;
       S.settings.voice = $('#sVoice').checked;
       if ($('#sVoiceId')) S.settings.voiceId = $('#sVoiceId').value;
