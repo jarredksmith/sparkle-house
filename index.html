@@ -175,7 +175,7 @@ h1,h2,h3{font-family:var(--display);line-height:1.1;margin:0}
 .mt{margin-top:22px}
 
 /* sheets */
-.sheet-wrap{position:fixed;inset:0;background:rgba(45,59,54,.35);z-index:60;display:flex;align-items:flex-end;justify-content:center}
+.sheet-wrap{position:fixed;inset:0;background:rgba(45,59,54,.35);z-index:76;display:flex;align-items:flex-end;justify-content:center}
 .sheet{background:var(--meadow);width:100%;max-width:560px;max-height:88vh;overflow:auto;border-radius:28px 28px 0 0;padding:22px 18px calc(var(--safe-b) + 22px);animation:up .22s ease-out}
 @keyframes up{from{transform:translateY(40px);opacity:0}}
 .sheet h2{font-size:26px;margin-bottom:12px}
@@ -215,6 +215,16 @@ h1,h2,h3{font-family:var(--display);line-height:1.1;margin:0}
 .coach video{position:absolute;inset:0;width:100%;height:100%;object-fit:cover}
 .coach video.mirror{transform:scaleX(-1)}
 .coach .chip{padding:7px 10px;font-size:15px;gap:6px}
+.ch-banner{position:relative;margin:12px auto 0;width:max-content;max-width:calc(100% - 28px);background:var(--sun);color:var(--ink);border-radius:22px;padding:6px 22px 8px;text-align:center;box-shadow:0 5px 0 #E2B321}
+.ch-time{font-family:var(--display);font-weight:800;font-size:44px;line-height:1.05;font-variant-numeric:tabular-nums}
+.ch-label{font-weight:800;font-size:14px;max-width:280px}
+.ch-banner.hurry .ch-time{color:#C2405E;animation:pulse .5s ease-in-out infinite alternate}
+@keyframes pulse{to{transform:scale(1.08)}}
+.dur-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin:6px 0 16px}
+.dur-grid .btn{padding:12px 8px}
+.custom-time{display:flex;gap:8px;align-items:center}
+.custom-time input,.custom-time select{font:inherit;font-weight:700;font-size:16px;border:3px solid var(--line);border-radius:14px;padding:10px;background:#fff;color:var(--ink);min-width:0}
+.custom-time input{width:80px}
 .chip.flip{padding:7px 9px}
 .chip.flip svg{width:20px;height:20px}
 .coach .hud{position:relative;display:flex;align-items:center;gap:6px;padding:calc(var(--safe-t) + 10px) 14px 0}
@@ -552,6 +562,15 @@ function awardTask(roomId, task, how) {
   save();
   return gained;
 }
+function awardBonus(roomId, pts, title) {
+  const p = player();
+  const room = roomById(roomId);
+  p.sparkles += pts; S.household.lifetime += pts;
+  S.history.unshift({ ts: Date.now(), room: room ? room.name : '', title, pts, player: p.id, task: 'bonus' });
+  S.history = S.history.slice(0, 300);
+  checkUnlocks(); save();
+  return pts;
+}
 function undoTask(roomId, task) {
   const sess = S.sessions[roomId];
   const room = roomById(roomId);
@@ -689,7 +708,7 @@ function topbar() {
 function render() {
   document.querySelectorAll('.tab').forEach((t) => t.setAttribute('aria-current', t.dataset.view === ui.view || (ui.view === 'room' && t.dataset.view === 'home') ? 'page' : 'false'));
   $('#tabbar').hidden = ui.view === 'room';
-  app.style.paddingBottom = ui.view === 'room' ? 'calc(var(--safe-b) + 150px)' : '';
+  app.style.paddingBottom = ui.view === 'room' ? 'calc(var(--safe-b) + 210px)' : '';
   if (!S.players.length) { app.innerHTML = ''; openWelcome(); return; }
   if (ui.view === 'room') renderRoom();
   else if (ui.view === 'rewards') renderRewards();
@@ -783,7 +802,8 @@ function renderRoom() {
     ${sess.demo ? '<p class="demo-note">These are <b>demo tasks</b>, not from your photo.</p>' : ''}
     <div class="actions"><div class="inner">
       ${open.length ? `<button class="btn primary" data-act="coach">${ICON.eye}Start Coach Mode</button>
-      <button class="btn" data-act="photo" data-src="cam" data-mode="after">${ICON.camera}Check my work</button>`
+      <div class="row"><button class="btn sun" data-act="clock-from-room">Beat the clock</button>
+      <button class="btn" data-act="photo" data-src="cam" data-mode="after">Check my work</button></div>`
       : `<button class="btn sun" data-act="finish">All done! Finish up</button>`}
     </div></div>`;
   if (fb) typeInto($('#roomLine'), fb);
@@ -1029,8 +1049,8 @@ const PEP_LINES = {
   unlock: ['You just unlocked the {item}! It\'s waiting on your decor shelf.', 'New decor! The {item} is yours, {name}.']
 };
 const PEP_TIMING = {
-  light: { gap: 45000, idle: 70000, work: 35000, recap: 180000 },
-  chatty: { gap: 25000, idle: 40000, work: 20000, recap: 120000 }
+  light: { gap: 45000, idle: 70000, work: 35000, recap: 180000, challengeGap: 300000 },
+  chatty: { gap: 25000, idle: 40000, work: 20000, recap: 120000, challengeGap: 180000 }
 };
 const plural = (n, word) => `${n} ${word}${n === 1 ? '' : 's'}`;
 function pepVars() {
@@ -1067,18 +1087,22 @@ function pepTick() {
   const mode = S.settings.pep;
   const T = PEP_TIMING[mode];
   const sess = S.sessions[C.roomId];
-  if (!T || !C.el || C.checking || !sess || !C.stream) return;
+  if (!T || !C.el || C.checking || !sess || !C.stream || CH.active) return;
   const open = sess.tasks.filter((t) => !t.done);
   if (!open.length) return;
   const now = Date.now();
   if (now - (C.lastSpoke || 0) < 8000 || now - (C.lastPepAt || 0) < T.gap) return;
+  const challengeReady = C.lastChallengeAt ? now - C.lastChallengeAt > T.challengeGap : now - C.start > 90000;
+  if (C.activeMs >= T.work && challengeReady && Math.random() < 0.35) {
+    C.activeMs = 0; surpriseChallenge(); return;
+  }
   const idle = now - (C.lastMotion || C.start);
   if (C.nudges < 3 && idle > T.idle * (C.nudges + 1)) { pepSay(C.nudges ? 'nudgeAgain' : 'nudge'); C.nudges++; return; }
   if (C.activeMs >= T.work) { pepSay('work'); C.activeMs = 0; return; }
   if (now >= C.nextRecap && open.length < sess.tasks.length) { pepSay('recap'); C.nextRecap = now + T.recap; }
 }
 function pepAfterAward() {
-  if (S.settings.pep === 'off' || !C.el) return;
+  if (S.settings.pep === 'off' || !C.el || CH.active) return;
   const sess = S.sessions[C.roomId];
   if (!sess) return;
   const open = sess.tasks.filter((t) => !t.done).length;
@@ -1101,6 +1125,126 @@ function coachFluff(happy) {
   f.classList.toggle('happy', happy);
   if (happy) setTimeout(() => f.classList.remove('happy'), 2200);
 }
+/* ---------- Challenges: beat-the-clock sprints with bonus sparkles ---------- */
+const CH = { active: false, kind: '', dur: 0, start: 0, end: 0, taskId: null, said: {}, timer: null, ending: false };
+const BLITZ_BONUS = 5;
+function durWords(sec) {
+  const m = Math.floor(sec / 60), r = sec % 60;
+  if (!m) return plural(r, 'second');
+  return r ? `${plural(m, 'minute')} ${plural(r, 'second')}` : plural(m, 'minute');
+}
+const clockText = (ms) => { const t = Math.max(0, Math.ceil(ms / 1000)); return `${Math.floor(t / 60)}:${String(t % 60).padStart(2, '0')}`; };
+function openChallengePicker() {
+  if (CH.active) return;
+  const picks = [[30, '30 sec'], [60, '1 min'], [120, '2 min'], [300, '5 min'], [600, '10 min'], [900, '15 min']];
+  openSheet(`<h2>Beat the clock</h2>
+    <p style="margin:0 0 10px;font-weight:600">Finish as many chores as you can before time runs out. Each one earns ${BLITZ_BONUS} bonus sparkles on top of its usual points.</p>
+    <div class="dur-grid">${picks.map(([v, l]) => `<button class="btn" data-act="ch-start" data-sec="${v}">${l}</button>`).join('')}</div>
+    <div class="field">Or pick your own
+      <div class="custom-time"><input id="chNum" type="number" inputmode="numeric" min="1" max="60" value="3" aria-label="Amount">
+      <select id="chUnit" aria-label="Unit"><option value="60">minutes</option><option value="1">seconds</option></select>
+      <button class="btn primary small" data-act="ch-start-custom">Start</button></div></div>`);
+}
+function startChallenge(kind, sec, taskId = null, intro = '') {
+  const sess = S.sessions[C.roomId];
+  if (!C.el || CH.active || !sess || !sess.tasks.some((t) => !t.done)) return;
+  sec = clamp(Math.round(sec), 10, 3600);
+  Object.assign(CH, { active: true, kind, dur: sec, start: Date.now(), end: Date.now() + sec * 1000, taskId, said: {}, ending: false });
+  C.lastChallengeAt = Date.now();
+  const target = taskId && sess.tasks.find((t) => t.id === taskId);
+  $('#chBanner').hidden = false;
+  $('#chLabel').textContent = target ? target.title : 'Beat the clock: as many as you can!';
+  $('#chTime').textContent = clockText(sec * 1000);
+  $('#chBtn').textContent = 'Stop';
+  unlockAudio(); chime();
+  coachLine(intro || `${durWords(sec)} on the clock! Go, go, go!`);
+  clearInterval(CH.timer);
+  CH.timer = setInterval(challengeTick, 250);
+}
+function challengeTick() {
+  if (!CH.active || !C.el) return clearInterval(CH.timer);
+  const left = CH.end - Date.now();
+  $('#chTime').textContent = clockText(left);
+  $('#chBanner').classList.toggle('hurry', left <= 10000);
+  const callouts = [
+    ['half', CH.dur >= 90 && left <= CH.dur * 500, 'Halfway! Keep it up!'],
+    ['min', CH.dur >= 180 && left <= 60000, 'One minute left!'],
+    ['30', CH.dur >= 60 && left <= 30000, '30 seconds left!'],
+    ['10', CH.dur >= 25 && left <= 10000, '10 seconds! Hurry!']
+  ];
+  for (const [key, due, line] of callouts) {
+    if (due && !CH.said[key]) {
+      // mark all earlier callouts as said so they never stack up
+      for (const [k] of callouts) { CH.said[k] = true; if (k === key) break; }
+      coachLine(line);
+      break;
+    }
+  }
+  if (left <= 0) finishChallenge('time');
+}
+function challengeOnAward() {
+  if (!CH.active || CH.ending) return;
+  const sess = S.sessions[C.roomId];
+  if (CH.kind === 'target' && sess.tasks.some((t) => t.id === CH.taskId && t.done)) return finishChallenge('target');
+  if (sess.tasks.every((t) => t.done)) finishChallenge('cleared');
+}
+async function finishChallenge(reason) {
+  if (!CH.active || CH.ending) return;
+  CH.ending = true;
+  clearInterval(CH.timer);
+  const sess = S.sessions[C.roomId];
+  const endedAt = Date.now();
+  if (reason === 'time') {
+    $('#chTime').textContent = '0:00';
+    coachLine('Time! Let me see how you did.');
+    chime();
+    for (let i = 0; i < 40 && C.checking; i++) await wait(500);
+    if (sess.tasks.some((t) => !t.done)) await runCheck(true, { silent: true });
+  }
+  if (!C.el) return resetChallenge();
+  const done = sess.tasks.filter((t) => t.done && t.doneAt >= CH.start);
+  const target = CH.taskId && sess.tasks.find((t) => t.id === CH.taskId);
+  const spare = Math.max(0, Math.round((CH.end - endedAt) / 1000));
+  let bonus = 0, line;
+  if (CH.kind === 'target') {
+    if (target && target.done && target.doneAt >= CH.start) {
+      bonus = target.points;
+      line = `You beat the clock${spare ? ` with ${plural(spare, 'second')} to spare` : ''}! Double sparkles: plus ${bonus} bonus.`;
+    } else line = 'So close! That one\'s not done yet. Finish it up, no timer this time.';
+  } else {
+    bonus = done.length * BLITZ_BONUS;
+    if (reason === 'cleared') line = `You cleared the whole list${spare ? ` with ${plural(spare, 'second')} to spare` : ''}! Plus ${bonus} bonus sparkles!`;
+    else if (done.length) line = `Time! You finished ${plural(done.length, 'chore')}. That's ${bonus} bonus sparkles!`;
+    else line = 'Time! Nothing finished this round, but the next one is yours.';
+  }
+  C.challengeEndedAt = Date.now();
+  if (bonus) { C.pts += awardBonus(C.roomId, bonus, CH.kind === 'target' ? 'Beat the clock bonus' : 'Challenge bonus'); pop(`+${bonus} ✦`); chime(); coachFluff(true); }
+  resetChallenge();
+  setTimeout(() => { if (C.el) coachLine(line); }, reason === 'time' ? 300 : 1500);
+  C.lastPepAt = Date.now();
+  renderCoachTasks();
+}
+function resetChallenge() {
+  clearInterval(CH.timer);
+  Object.assign(CH, { active: false, ending: false, taskId: null });
+  const b = $('#chBanner'); if (b) { b.hidden = true; b.classList.remove('hurry'); }
+  const btn = $('#chBtn'); if (btn) btn.textContent = 'Challenge';
+}
+function surpriseChallenge() {
+  const sess = S.sessions[C.roomId];
+  const open = sess.tasks.filter((t) => !t.done);
+  const quick = open.filter((t) => (t.minutes || 2) <= 3);
+  const v = pepVars();
+  if (quick.length && Math.random() < 0.6) {
+    const t = quick[Math.floor(Math.random() * quick.length)];
+    const sec = clamp(Math.round(((t.minutes || 1) * 60 * 0.75) / 15) * 15, 30, 120);
+    const name = t.title.replace(/[.!]$/, '').replace(/^\w/, (c) => c.toLowerCase());
+    startChallenge('target', sec, t.id, `Challenge time, ${v.name}! I'm putting ${durWords(sec)} on the clock. Can you ${name} before it runs out? Beat it and the sparkles double!`);
+  } else {
+    const sec = open.length >= 4 ? 120 : 60;
+    startChallenge('blitz', sec, null, `Challenge time! ${durWords(sec)} on the clock. See how many chores you can knock out. ${BLITZ_BONUS} bonus sparkles each!`);
+  }
+}
 async function startCoach(roomId) {
   unlockAudio();
   const room = roomById(roomId);
@@ -1118,10 +1262,11 @@ async function startCoach(roomId) {
       <span class="chip timer" id="cTime">0:00</span>
       <span class="chip score">${STAR()}<span id="cPts">0</span></span>
     </div>
+    <div class="ch-banner" id="chBanner" hidden aria-live="polite"><div class="ch-time" id="chTime">1:00</div><div class="ch-label" id="chLabel">Beat the clock</div></div>
     <div class="bottom">
       <div class="speaker">${fluffSVG()}<div class="dialog"><span class="tag">Fluff</span><span id="coachLine"></span></div></div>
       <div class="coach-tasks" id="cTasks"></div>
-      <div class="row"><button class="btn sun" data-act="coach-check">Check now</button></div>
+      <div class="row"><button class="btn" data-act="ch-open" id="chBtn">Challenge</button><button class="btn sun" data-act="coach-check">Check now</button></div>
     </div>`;
   document.body.appendChild(el);
   C.el = el; C.video = el.querySelector('video');
@@ -1214,7 +1359,7 @@ function coachTick() {
   if (C.activity) return setStatus('', 'Step back');
   setStatus('', 'Watching');
 }
-async function runCheck(manual) {
+async function runCheck(manual, opts = {}) {
   const sess = S.sessions[C.roomId];
   if (C.checking || !sess || !C.video || !C.video.videoWidth) return;
   const open = sess.tasks.filter((t) => !t.done);
@@ -1227,11 +1372,17 @@ async function runCheck(manual) {
     const res = await api.verify(before ? before.small : null, after.b64, open.map((t) => ({ id: t.id, title: t.title, zone: t.zone })));
     if (!C.el) return;
     const r = applyVerify(C.roomId, res, 'coach');
+    if (opts.silent) {
+      if (r.count) { C.pts += r.pts; pop(`+${r.pts} ✦`); }
+      renderCoachTasks();
+      return r;
+    }
     if (r.count) {
       C.pts += r.pts;
       pop(`+${r.pts} ✦`); chime(); coachFluff(true);
       coachLine(res.feedback || 'Nice work!');
       pepAfterAward();
+      challengeOnAward();
     } else if (manual) {
       coachLine(res.feedback || 'No changes spotted yet. Keep going!');
     } else if (res.feedback) {
@@ -1245,7 +1396,8 @@ async function runCheck(manual) {
 }
 function coachDone() {
   coachFluff(true);
-  setTimeout(() => coachLine(`Every chore is done! The room is sparkling. You earned ${C.pts} sparkles this session.`), 1200);
+  const afterChallenge = Date.now() - (C.challengeEndedAt || 0) < 3000;
+  setTimeout(() => coachLine(`Every chore is done! The room is sparkling. You earned ${C.pts} sparkles this session.`), afterChallenge ? 6500 : 1200);
   const row = C.el.querySelector('.bottom .row');
   row.innerHTML = '<button class="btn sun" data-act="coach-end">Finish</button>';
 }
@@ -1253,6 +1405,7 @@ async function wakeOn() {
   try { if ('wakeLock' in navigator && !document.hidden) C.wake = await navigator.wakeLock.request('screen'); } catch (e) { /* not supported */ }
 }
 function stopCoach() {
+  resetChallenge();
   clearInterval(C.loop); clearInterval(C.clock);
   if (C.stream) C.stream.getTracks().forEach((t) => t.stop());
   if (C.wake) { C.wake.release().catch(() => {}); C.wake = null; }
@@ -1301,12 +1454,21 @@ document.addEventListener('click', (e) => {
     case 'coach-end': stopCoach(); break;
     case 'coach-check': unlockAudio(); runCheck(true); break;
     case 'coach-flip': flipCamera(); break;
+    case 'ch-open': if (CH.active) { resetChallenge(); coachLine('Challenge stopped. No worries!', false); } else openChallengePicker(); break;
+    case 'ch-start': closeSheet(); startChallenge('blitz', Number(a.dataset.sec)); break;
+    case 'ch-start-custom': {
+      const n = Number($('#chNum').value), unit = Number($('#chUnit').value);
+      if (!(n > 0)) { $('#chNum').focus(); break; }
+      closeSheet(); startChallenge('blitz', n * unit);
+      break;
+    }
+    case 'clock-from-room': startCoach(ui.roomId).then(() => { if (C.el) openChallengePicker(); }); break;
     case 'coach-toggle': {
       const sess = S.sessions[C.roomId];
       const t = sess && sess.tasks.find((x) => x.id === id);
       if (!t) break;
       if (t.done) { if (t.how === 'hand') { C.pts = Math.max(0, C.pts - t.points); undoTask(C.roomId, t); } }
-      else { const g = awardTask(C.roomId, t, 'hand'); C.pts += g; pop(`+${g} ✦`); chime(); coachFluff(true); pepAfterAward(); }
+      else { const g = awardTask(C.roomId, t, 'hand'); C.pts += g; pop(`+${g} ✦`); chime(); coachFluff(true); pepAfterAward(); challengeOnAward(); }
       renderCoachTasks();
       if (sess.tasks.every((x) => x.done)) coachDone();
       break;
