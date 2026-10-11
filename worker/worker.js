@@ -26,8 +26,7 @@ Rules:
 - "zone" is the ninth of the photo where the item sits: one of ${ZONES.join(', ')}.
 - Return 3 to 12 tasks. If the room already looks tidy, return no tasks and say so in the summary. If the photo isn't of a room, return no tasks and say what you see in the summary.
 
-Respond with JSON only, no other text:
-{"room_guess":"string","summary":"one upbeat sentence (max 20 words) about the room","tasks":[{"title":"string (max 70 chars)","detail":"short optional tip or empty string","zone":"one zone","points":number,"minutes":number,"category":"${CATEGORIES.join('|')}"}]}`;
+Give your answer by calling the chore_list tool.`;
 
 const VERIFY_SYSTEM = `You check progress in a family chore game. You get the open chores for a room, a recent AFTER photo, and usually a BEFORE photo taken when the list was made.
 
@@ -37,8 +36,49 @@ Rules:
 - Mark a task done only when the AFTER photo clearly shows it is finished. If the area is hidden, blocked, or out of frame, do not mark it done.
 - Be fair but encouraging. Never mark a task done just to be nice.
 
-Respond with JSON only, no other text:
-{"done":["ids of tasks that are clearly finished"],"blocked":["ids whose area you can't see"],"feedback":"one upbeat line, max 14 words. Name what was finished, or if nothing was, nudge toward an easy remaining task."}`;
+Give your answer by calling the progress_check tool.`;
+
+// Tools force Claude to answer in a fixed structure instead of free text.
+const CHORE_TOOL = {
+  name: 'chore_list',
+  description: 'Return the chore list for the room in the photo.',
+  input_schema: {
+    type: 'object',
+    properties: {
+      room_guess: { type: 'string', description: 'What kind of room this looks like.' },
+      summary: { type: 'string', description: 'One upbeat sentence, max 20 words, about the room.' },
+      tasks: {
+        type: 'array',
+        items: {
+          type: 'object',
+          properties: {
+            title: { type: 'string', description: 'The chore, max 70 characters, naming the specific visible object.' },
+            detail: { type: 'string', description: 'Short optional tip, or an empty string.' },
+            zone: { type: 'string', enum: ZONES },
+            points: { type: 'integer', minimum: 1, maximum: 25 },
+            minutes: { type: 'integer', minimum: 1, maximum: 90 },
+            category: { type: 'string', enum: CATEGORIES }
+          },
+          required: ['title', 'zone', 'points', 'minutes', 'category']
+        }
+      }
+    },
+    required: ['summary', 'tasks']
+  }
+};
+const PROGRESS_TOOL = {
+  name: 'progress_check',
+  description: 'Report which open chores are clearly finished in the AFTER photo.',
+  input_schema: {
+    type: 'object',
+    properties: {
+      done: { type: 'array', items: { type: 'string' }, description: 'IDs of chores that are clearly finished.' },
+      blocked: { type: 'array', items: { type: 'string' }, description: 'IDs of chores whose area is hidden or out of frame.' },
+      feedback: { type: 'string', description: 'One upbeat line, max 14 words. Name what was finished, or nudge toward an easy remaining chore.' }
+    },
+    required: ['done', 'feedback']
+  }
+};
 
 export default {
   async fetch(request, env) {
@@ -76,11 +116,10 @@ export default {
 async function analyze(body, env) {
   if (!isB64(body.image)) throw badRequest('No photo received.');
   const room = String(body.room || 'room').slice(0, 40);
-  const text = await askClaude(env, env.MODEL_ANALYZE || 'claude-sonnet-5-5', ANALYZE_SYSTEM, [
+  const j = await askClaude(env, env.MODEL_ANALYZE || 'claude-sonnet-5-5', ANALYZE_SYSTEM, [
     imageBlock(body.image),
     { type: 'text', text: `This is the ${room}. Make the chore list.` }
-  ], 1500);
-  const j = parseJSON(text);
+  ], CHORE_TOOL, 4000);
   const tasks = (Array.isArray(j.tasks) ? j.tasks : []).slice(0, 15).map((t) => ({
     title: String(t.title || '').trim().slice(0, 90),
     detail: String(t.detail || '').trim().slice(0, 120),
@@ -102,8 +141,7 @@ async function verify(body, env) {
   if (isB64(body.before)) content.push({ type: 'text', text: 'BEFORE photo:' }, imageBlock(body.before));
   content.push({ type: 'text', text: 'AFTER photo:' }, imageBlock(body.after));
   content.push({ type: 'text', text: `Open chores:\n${JSON.stringify(tasks)}` });
-  const text = await askClaude(env, env.MODEL_VERIFY || 'claude-haiku-5-5', VERIFY_SYSTEM, content, 600);
-  const j = parseJSON(text);
+  const j = await askClaude(env, env.MODEL_VERIFY || 'claude-haiku-5-5', VERIFY_SYSTEM, content, PROGRESS_TOOL, 1000);
   const ids = new Set(tasks.map((t) => t.id));
   return {
     done: (Array.isArray(j.done) ? j.done : []).map(String).filter((id) => ids.has(id)),
@@ -112,7 +150,7 @@ async function verify(body, env) {
   };
 }
 
-async function askClaude(env, model, system, content, maxTokens) {
+async function askClaude(env, model, system, content, tool, maxTokens) {
   const res = await fetch('https://api.anthropic.com/v1/messages', {
     method: 'POST',
     headers: {
@@ -120,14 +158,26 @@ async function askClaude(env, model, system, content, maxTokens) {
       'anthropic-version': '2023-06-01',
       'content-type': 'application/json'
     },
-    body: JSON.stringify({ model, max_tokens: maxTokens, system, messages: [{ role: 'user', content }] })
+    body: JSON.stringify({
+      model, max_tokens: maxTokens, system,
+      tools: [tool], tool_choice: { type: 'tool', name: tool.name },
+      messages: [{ role: 'user', content }]
+    })
   });
   const data = await res.json().catch(() => ({}));
   if (!res.ok) {
     const msg = data && data.error && data.error.message ? data.error.message : `status ${res.status}`;
     throw new Error(`Claude API error: ${msg}`);
   }
-  return (data.content || []).filter((b) => b.type === 'text').map((b) => b.text).join('');
+  const blocks = data.content || [];
+  const call = blocks.find((b) => b.type === 'tool_use' && b.input && typeof b.input === 'object');
+  if (call) return call.input;
+  // Fallback: the answer came back as text. Try to pull JSON out of it.
+  const text = blocks.filter((b) => b.type === 'text').map((b) => b.text).join('');
+  try { return parseJSON(text); } catch (e) {
+    console.log('Unparseable answer', { stop_reason: data.stop_reason, text: text.slice(0, 500) });
+    throw e;
+  }
 }
 
 function badRequest(msg) { const e = new Error(msg); e.status = 400; return e; }
