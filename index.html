@@ -1,0 +1,1127 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Sparkle House</title>
+<meta name="description" content="Snap a messy room, get a chore list, earn sparkles as you clean.">
+<meta name="theme-color" content="#7FCF9A">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="apple-mobile-web-app-title" content="Sparkle">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+<link rel="icon" href="icons/icon-192.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Baloo+2:wght@600;700;800&family=Nunito:wght@500;600;700;800&display=swap" rel="stylesheet">
+<style>
+:root{
+  --grass:#7FCF9A;
+  --meadow:#E6F5EA;
+  --leaf:#2F6B4F;
+  --leaf-dark:#22513B;
+  --ink:#2D3B36;
+  --ink-soft:#5D6D66;
+  --paper:#FFFFFF;
+  --sun:#FFD447;
+  --sun-soft:#FFF4C4;
+  --berry:#FF6F8E;
+  --sky:#8AD3F0;
+  --dust:#C9CED6;
+  --line:#CFE6D6;
+  --ledge:#B9DCC4;
+  --bubble:#FFFCEF;
+  --bubble-edge:#EADFAE;
+  --display:'Baloo 2', ui-rounded, system-ui, sans-serif;
+  --body:'Nunito', ui-rounded, system-ui, sans-serif;
+  --safe-t:env(safe-area-inset-top,0px);
+  --safe-b:env(safe-area-inset-bottom,0px);
+}
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+html,body{margin:0;height:100%}
+body{
+  font-family:var(--body);color:var(--ink);font-size:16px;line-height:1.45;
+  background-color:var(--meadow);
+  background-image:radial-gradient(#D3EDDA 2px, transparent 2.5px),radial-gradient(#D3EDDA 2px, transparent 2.5px);
+  background-size:36px 36px;background-position:0 0,18px 18px;
+  -webkit-font-smoothing:antialiased;overscroll-behavior-y:none;
+}
+button{font:inherit;color:inherit;cursor:pointer}
+button:focus-visible,input:focus-visible,select:focus-visible{outline:3px solid var(--sky);outline-offset:2px}
+h1,h2,h3{font-family:var(--display);line-height:1.1;margin:0}
+.app{max-width:560px;margin:0 auto;min-height:100%;padding:calc(var(--safe-t) + 10px) 16px calc(var(--safe-b) + 96px)}
+
+/* top bar */
+.topbar{display:flex;align-items:center;gap:10px;margin-bottom:14px}
+.who{display:flex;align-items:center;gap:8px;background:var(--paper);border:0;border-radius:999px;padding:5px 14px 5px 5px;box-shadow:0 3px 0 var(--ledge);font-weight:800}
+.avatar{width:32px;height:32px;border-radius:50%;display:grid;place-items:center;font-family:var(--display);font-weight:800;color:#fff;font-size:17px;flex:none}
+.spark-pill{margin-left:auto;display:flex;align-items:center;gap:6px;background:var(--sun);border-radius:999px;padding:6px 14px;font-family:var(--display);font-weight:800;font-size:18px;box-shadow:0 3px 0 #E2B321}
+.spark-pill .star{width:18px;height:18px}
+.icon-btn{width:42px;height:42px;border-radius:50%;border:0;background:var(--paper);display:grid;place-items:center;box-shadow:0 3px 0 var(--ledge);flex:none}
+.icon-btn svg{width:22px;height:22px}
+
+/* Fluff + dialog */
+.fluff{width:64px;height:64px;flex:none}
+.fluff.lg{width:96px;height:96px}
+.fluff .eye-closed{display:none}
+.fluff.happy .eye-open{display:none}
+.fluff.happy .eye-closed{display:inline}
+.dialog{position:relative;background:var(--bubble);border:3px solid var(--bubble-edge);border-radius:26px;padding:18px 18px 16px;font-weight:700;font-size:17px}
+.dialog .tag{position:absolute;top:-14px;left:18px;background:var(--sun);font-family:var(--display);font-weight:800;font-size:15px;padding:0 12px;border-radius:999px;line-height:26px}
+.speaker{display:flex;align-items:flex-end;gap:10px}
+.speaker .dialog{flex:1}
+.caret{display:inline-block;width:8px;height:8px;margin-left:6px;border-right:3px solid var(--leaf);border-bottom:3px solid var(--leaf);transform:rotate(45deg) translateY(-3px);animation:bob 1s ease-in-out infinite}
+@keyframes bob{50%{transform:rotate(45deg) translate(2px,-1px)}}
+
+/* panels */
+.panel{background:var(--paper);border-radius:22px;box-shadow:0 4px 0 var(--ledge);padding:16px}
+.stats{display:flex;gap:8px;margin:18px 0 22px}
+.stat{flex:1;background:var(--paper);border-radius:18px;padding:10px 12px;box-shadow:0 3px 0 var(--ledge)}
+.stat b{display:block;font-family:var(--display);font-size:24px;line-height:1.1}
+.stat span{font-size:13px;color:var(--ink-soft);font-weight:700}
+.section-title{font-size:22px;margin:0 0 10px 4px}
+
+/* rooms */
+.rooms{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+.room{position:relative;text-align:left;border:0;background:var(--paper);border-radius:22px;padding:14px 14px 12px;box-shadow:0 4px 0 var(--ledge);display:flex;flex-direction:column;gap:6px;min-height:128px;transition:transform .08s}
+.room:active{transform:translateY(3px);box-shadow:0 1px 0 var(--ledge)}
+.room .emo{font-size:34px;line-height:1}
+.room .nm{font-family:var(--display);font-weight:700;font-size:19px;line-height:1.1}
+.room .badge{position:absolute;top:10px;right:10px;background:var(--berry);color:#fff;font-weight:800;font-size:13px;border-radius:999px;padding:2px 9px}
+.room.add{background:transparent;border:3px dashed var(--ledge);box-shadow:none;align-items:center;justify-content:center;color:var(--leaf);font-weight:800}
+.pips{display:flex;gap:3px;margin-top:auto}
+.pips svg{width:17px;height:17px}
+.shine-note{font-size:13px;font-weight:700;color:var(--ink-soft)}
+.shine-note.low{color:#C2405E}
+
+/* room view */
+.back{display:flex;align-items:center;gap:6px;border:0;background:none;font-weight:800;color:var(--leaf);padding:6px 0;margin-bottom:6px}
+.room-head{display:flex;align-items:center;gap:12px;margin-bottom:14px}
+.room-head .emo{font-size:40px}
+.room-head h1{font-size:32px}
+.photo{position:relative;border-radius:22px;overflow:hidden;box-shadow:0 4px 0 var(--ledge);background:#dfe9e2;margin-bottom:16px}
+.photo img{display:block;width:100%;height:auto}
+.zones{position:absolute;inset:0;display:grid;grid-template-columns:repeat(3,1fr);grid-template-rows:repeat(3,1fr)}
+.zone{position:relative;display:grid;place-items:center;border-radius:16px;margin:4px;transition:background .2s, box-shadow .2s}
+.zone.hot{background:rgba(255,212,71,.28);box-shadow:inset 0 0 0 3px var(--sun)}
+.zone .mk{border:0;min-width:34px;height:34px;border-radius:999px;background:var(--berry);color:#fff;font-weight:800;font-family:var(--display);font-size:17px;box-shadow:0 3px 0 #C2405E;padding:0 8px}
+.no-photo{display:flex;gap:12px;align-items:center;margin-bottom:16px;font-weight:700;font-size:15px;color:var(--ink-soft)}
+.progress{margin:18px 0 10px;display:flex;align-items:center;gap:12px;font-weight:800}
+.bar{flex:1;height:14px;border-radius:999px;background:#DCEFE2;overflow:hidden}
+.bar i{display:block;height:100%;background:linear-gradient(90deg,var(--grass),#55B97C);border-radius:999px;transition:width .4s}
+.tasks{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:10px}
+.task{display:flex;align-items:center;gap:12px;background:var(--paper);border-radius:18px;padding:12px 12px 12px 10px;box-shadow:0 3px 0 var(--ledge);border:3px solid transparent;cursor:pointer}
+.task.sel{border-color:var(--sun)}
+.tick{width:38px;height:38px;flex:none;border-radius:50%;border:3px solid var(--grass);background:#fff;display:grid;place-items:center;padding:0}
+.tick svg{width:20px;height:20px;opacity:0}
+.task.done .tick{background:var(--grass)}
+.task.done .tick svg{opacity:1}
+.tbody{flex:1;min-width:0}
+.ttl{font-weight:800;line-height:1.25}
+.task.done .ttl{text-decoration:line-through;text-decoration-thickness:2px;color:var(--ink-soft)}
+.tdet{font-size:14px;color:var(--ink-soft);font-weight:600;margin-top:2px}
+.tmeta{display:flex;flex-direction:column;align-items:flex-end;gap:2px;flex:none}
+.pts{background:var(--sun-soft);border-radius:999px;padding:1px 9px;font-family:var(--display);font-weight:800;font-size:15px}
+.min{font-size:12px;color:var(--ink-soft);font-weight:700}
+.by{font-size:12px;font-weight:800;color:var(--leaf)}
+
+.actions{position:fixed;left:0;right:0;bottom:0;padding:12px 16px calc(var(--safe-b) + 12px);background:linear-gradient(transparent, var(--meadow) 28%);z-index:20}
+.actions .inner{max-width:528px;margin:0 auto;display:flex;flex-direction:column;gap:8px}
+.row{display:flex;gap:8px}
+.btn{border:0;border-radius:999px;padding:14px 18px;font-weight:800;font-size:17px;background:var(--paper);box-shadow:0 4px 0 var(--ledge);display:flex;align-items:center;justify-content:center;gap:8px;flex:1;transition:transform .08s}
+.btn:active{transform:translateY(3px);box-shadow:0 1px 0 var(--ledge)}
+.btn.primary{background:var(--leaf);color:#fff;box-shadow:0 4px 0 var(--leaf-dark)}
+.btn.primary:active{box-shadow:0 1px 0 var(--leaf-dark)}
+.btn.sun{background:var(--sun);box-shadow:0 4px 0 #E2B321}
+.btn.small{padding:9px 14px;font-size:15px;flex:0 1 auto}
+.btn.text{background:none;box-shadow:none;color:var(--leaf);padding:8px 10px;font-size:15px}
+.btn[disabled]{opacity:.5}
+.btn svg{width:20px;height:20px}
+
+/* empty state */
+.empty{display:flex;flex-direction:column;align-items:center;text-align:center;gap:16px;padding:22px 8px}
+.empty .dialog{text-align:left}
+.demo-note{font-size:14px;font-weight:700;color:var(--ink-soft);text-align:center;margin-top:10px}
+.demo-note b{color:var(--leaf)}
+
+/* tab bar */
+.tabbar{position:fixed;left:50%;transform:translateX(-50%);bottom:calc(var(--safe-b) + 12px);display:flex;gap:6px;background:var(--paper);border-radius:999px;padding:6px;box-shadow:0 4px 0 var(--ledge);z-index:15}
+.tab{border:0;background:none;border-radius:999px;padding:10px 20px;font-weight:800;display:flex;align-items:center;gap:6px;color:var(--ink-soft)}
+.tab svg{width:20px;height:20px}
+.tab[aria-current="page"]{background:var(--grass);color:var(--ink)}
+
+/* rewards */
+.shelf{display:grid;grid-template-columns:repeat(3,1fr);gap:10px}
+.decor{background:var(--paper);border-radius:18px;padding:12px 6px 10px;text-align:center;box-shadow:0 3px 0 var(--ledge)}
+.decor .e{font-size:38px;line-height:1.1;display:block}
+.decor .n{font-weight:800;font-size:13px;line-height:1.2;display:block;margin-top:4px}
+.decor .c{font-size:12px;font-weight:700;color:var(--ink-soft)}
+.decor.locked .e{filter:grayscale(1) brightness(.4);opacity:.35}
+.decor.locked{background:#F3FAF5;box-shadow:0 3px 0 #DCEDE1}
+.next{margin:4px 0 14px 4px;font-weight:700;color:var(--ink-soft)}
+.board{list-style:none;margin:0;padding:0}
+.board li{display:flex;align-items:center;gap:10px;padding:8px 0;font-weight:800}
+.board li + li{border-top:2px dashed var(--line)}
+.board .sc{margin-left:auto;font-family:var(--display);font-size:20px}
+.log{list-style:none;margin:0;padding:0;font-size:14px}
+.log li{display:flex;gap:8px;padding:6px 0;font-weight:600}
+.log li span:last-child{margin-left:auto;font-weight:800;white-space:nowrap}
+.mt{margin-top:22px}
+
+/* sheets */
+.sheet-wrap{position:fixed;inset:0;background:rgba(45,59,54,.35);z-index:60;display:flex;align-items:flex-end;justify-content:center}
+.sheet{background:var(--meadow);width:100%;max-width:560px;max-height:88vh;overflow:auto;border-radius:28px 28px 0 0;padding:22px 18px calc(var(--safe-b) + 22px);animation:up .22s ease-out}
+@keyframes up{from{transform:translateY(40px);opacity:0}}
+.sheet h2{font-size:26px;margin-bottom:12px}
+.sheet h3{font-size:19px;margin:20px 0 8px}
+.field{display:flex;flex-direction:column;gap:6px;margin-bottom:12px;font-weight:800;font-size:15px}
+.field input,.field select{font:inherit;font-weight:700;font-size:16px;border:3px solid var(--line);border-radius:14px;padding:11px 12px;background:#fff;color:var(--ink)}
+.field small{font-weight:600;color:var(--ink-soft)}
+.toggle{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:10px 0;font-weight:800}
+.toggle input{width:24px;height:24px;accent-color:var(--leaf)}
+.plist{list-style:none;margin:0 0 10px;padding:0;display:flex;flex-direction:column;gap:8px}
+.plist li{display:flex;align-items:center;gap:10px;background:#fff;border-radius:16px;padding:8px 10px;font-weight:800}
+.plist li.cur{box-shadow:inset 0 0 0 3px var(--grass)}
+.plist li button.pick{flex:1;display:flex;align-items:center;gap:10px;border:0;background:none;text-align:left;font-weight:800;padding:0}
+.emoji-pick{display:flex;flex-wrap:wrap;gap:6px}
+.emoji-pick button{border:3px solid transparent;background:#fff;border-radius:12px;font-size:26px;width:48px;height:48px;padding:0}
+.emoji-pick button[aria-pressed="true"]{border-color:var(--grass)}
+.status{font-weight:800;font-size:14px;padding:8px 12px;border-radius:12px;background:#fff;margin-top:6px}
+.status.ok{color:var(--leaf)}
+.status.bad{color:#C2405E}
+
+/* toast + pops */
+.toasts{position:fixed;top:calc(var(--safe-t) + 12px);left:0;right:0;display:flex;flex-direction:column;align-items:center;gap:8px;z-index:90;pointer-events:none}
+.toast{background:var(--ink);color:#fff;font-weight:800;border-radius:16px;padding:10px 16px;max-width:92vw;animation:tin .25s ease-out;box-shadow:0 4px 0 rgba(0,0,0,.15)}
+.toast.win{background:var(--sun);color:var(--ink)}
+@keyframes tin{from{transform:translateY(-12px);opacity:0}}
+.pop{position:fixed;left:50%;top:42%;transform:translate(-50%,0);font-family:var(--display);font-weight:800;font-size:46px;color:var(--ink);background:var(--sun);border-radius:999px;padding:4px 22px;box-shadow:0 5px 0 #E2B321;z-index:95;pointer-events:none;animation:pop 1.4s ease-out forwards}
+@keyframes pop{0%{transform:translate(-50%,20px) scale(.6);opacity:0}15%{transform:translate(-50%,0) scale(1.08);opacity:1}30%{transform:translate(-50%,0) scale(1)}80%{opacity:1}100%{transform:translate(-50%,-70px);opacity:0}}
+
+/* busy overlay */
+.busy{position:fixed;inset:0;z-index:80;background:rgba(230,245,234,.92);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:16px;padding:24px}
+.busy .fluff{animation:hop .8s ease-in-out infinite}
+@keyframes hop{50%{transform:translateY(-12px)}}
+.busy p{font-family:var(--display);font-size:22px;font-weight:700;margin:0;text-align:center}
+
+/* coach mode */
+.coach{position:fixed;inset:0;z-index:70;background:#1d2a25;color:#fff;display:flex;flex-direction:column}
+.coach video{position:absolute;inset:0;width:100%;height:100%;object-fit:cover}
+.coach .hud{position:relative;display:flex;align-items:center;gap:6px;padding:calc(var(--safe-t) + 10px) 14px 0}
+.chip{background:rgba(255,255,255,.92);color:var(--ink);border-radius:999px;padding:7px 14px;font-weight:800;display:flex;align-items:center;gap:8px;border:0}
+.chip .dot{flex:none;width:10px;height:10px;border-radius:50%;background:var(--grass)}
+.chip .dot.moving{background:var(--sun)}
+.chip .dot.checking{background:var(--sky);animation:blink .7s infinite}
+@keyframes blink{50%{opacity:.3}}
+.chip.status{min-width:0;flex:0 1 auto}
+.chip.status span:last-child{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.chip.timer{margin-left:auto;flex:none}
+.chip.score{flex:none}
+.chip .star{width:16px;height:16px;flex:none}
+.chip.score{font-family:var(--display);font-size:18px;background:var(--sun)}
+.coach .bottom{position:absolute;left:0;right:0;bottom:0;padding:0 14px calc(var(--safe-b) + 14px);color:var(--ink)}
+.coach .speaker .dialog{min-height:84px}
+.coach .fluff{filter:drop-shadow(0 3px 0 rgba(0,0,0,.18))}
+.coach-tasks{display:flex;gap:8px;overflow-x:auto;padding:12px 2px 10px;scrollbar-width:none}
+.coach-tasks::-webkit-scrollbar{display:none}
+.ctask{flex:none;max-width:220px;background:rgba(255,255,255,.94);border:0;border-radius:14px;padding:8px 12px;text-align:left;font-weight:800;font-size:14px;line-height:1.25;display:flex;gap:8px;align-items:center}
+.ctask .pts{font-size:13px}
+.ctask.done{opacity:.55;text-decoration:line-through}
+.coach .row .btn{box-shadow:0 4px 0 rgba(0,0,0,.25)}
+.timer{font-variant-numeric:tabular-nums}
+
+@media (prefers-reduced-motion: reduce){
+  *{animation-duration:.01ms !important;animation-iteration-count:1 !important;transition:none !important}
+  .pop{animation:fadeonly 1.4s forwards !important}
+  @keyframes fadeonly{0%,80%{opacity:1}100%{opacity:0}}
+}
+[hidden]{display:none !important}
+</style>
+</head>
+<body>
+<div class="app" id="app"></div>
+<nav class="tabbar" id="tabbar" aria-label="Main">
+  <button class="tab" data-act="tab" data-view="home" aria-current="page">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M3 11l9-7 9 7"/><path d="M5 10v10h14V10"/><path d="M10 20v-5h4v5"/></svg>House
+  </button>
+  <button class="tab" data-act="tab" data-view="rewards">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l2.6 5.6 6 .7-4.5 4.1 1.2 6L12 16.5 6.7 19.4l1.2-6L3.4 9.3l6-.7z"/></svg>Rewards
+  </button>
+</nav>
+<div class="toasts" id="toasts" aria-live="polite"></div>
+<input type="file" id="inCam" accept="image/*" capture="environment" hidden>
+<input type="file" id="inLib" accept="image/*" hidden>
+
+<script>
+'use strict';
+/* ---------- helpers ---------- */
+const $ = (s, el = document) => el.querySelector(s);
+const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+const uid = () => Math.random().toString(36).slice(2, 9);
+const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
+const reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+const dayKey = (t = Date.now()) => { const d = new Date(t); return d.getFullYear() + '-' + (d.getMonth() + 1) + '-' + d.getDate(); };
+
+const PLAYER_COLORS = ['#FF8FA3', '#5BB8EA', '#F2B321', '#A98BEB', '#4FBF7E', '#FF9B5A'];
+const ROOM_EMOJI = ['🍳', '🛋️', '🛏️', '🛁', '🧺', '🧸', '💻', '🚗', '🌿', '🍽️', '📚', '🎮'];
+const ZONES = ['top-left', 'top', 'top-right', 'left', 'center', 'right', 'bottom-left', 'bottom', 'bottom-right'];
+const DECOR = [
+  { id: 'fern', e: '🪴', n: 'Potted fern', c: 40 },
+  { id: 'basket', e: '🧺', n: 'Woven basket', c: 100 },
+  { id: 'lamp', e: '💡', n: 'Cozy lamp', c: 180 },
+  { id: 'clock', e: '🕰️', n: 'Mantel clock', c: 280 },
+  { id: 'books', e: '📚', n: 'Book stack', c: 400 },
+  { id: 'tank', e: '🐠', n: 'Fish tank', c: 550 },
+  { id: 'chime', e: '🎐', n: 'Wind chime', c: 720 },
+  { id: 'piano', e: '🎹', n: 'Little piano', c: 950 },
+  { id: 'globe', e: '🌍', n: 'Desk globe', c: 1200 },
+  { id: 'tree', e: '🌳', n: 'Indoor tree', c: 1500 },
+  { id: 'rug', e: '🌈', n: 'Rainbow rug', c: 2000 },
+  { id: 'fort', e: '⛺', n: 'Blanket fort', c: 2600 }
+];
+
+/* ---------- state ---------- */
+const STORE_KEY = 'sparklehouse.v1';
+const fresh = () => ({
+  players: [], current: null,
+  rooms: [
+    { id: 'kitchen', name: 'Kitchen', emoji: '🍳', shine: 45, shineAt: Date.now() },
+    { id: 'living', name: 'Living room', emoji: '🛋️', shine: 60, shineAt: Date.now() },
+    { id: 'bedroom', name: 'Bedroom', emoji: '🛏️', shine: 35, shineAt: Date.now() },
+    { id: 'bathroom', name: 'Bathroom', emoji: '🛁', shine: 50, shineAt: Date.now() }
+  ],
+  sessions: {},
+  settings: { workerUrl: '', token: '', sound: true, voice: false, minGap: 20 },
+  household: { lifetime: 0 },
+  unlocked: [],
+  streak: { count: 0, last: '' },
+  history: [],
+  coachTipSeen: false
+});
+function load() {
+  const base = fresh();
+  try {
+    const raw = localStorage.getItem(STORE_KEY);
+    if (raw) {
+      const s = Object.assign(base, JSON.parse(raw));
+      s.settings = Object.assign(fresh().settings, s.settings || {});
+      return s;
+    }
+  } catch (e) { /* storage blocked */ }
+  return base;
+}
+let S = load();
+function save() { try { localStorage.setItem(STORE_KEY, JSON.stringify(S)); } catch (e) { /* ignore */ } }
+
+// Photos live only in memory, never in storage.
+const mem = { before: {}, selected: null, lastFeedback: {} };
+let ui = { view: 'home', roomId: null };
+
+const player = () => S.players.find((p) => p.id === S.current) || S.players[0];
+const roomById = (id) => S.rooms.find((r) => r.id === id);
+const shineOf = (r) => Math.max(0, Math.round(r.shine - ((Date.now() - r.shineAt) / 864e5) * 12));
+function setShine(r, v) { r.shine = clamp(Math.round(v), 0, 100); r.shineAt = Date.now(); }
+
+/* ---------- art ---------- */
+function fluffSVG(cls = '') {
+  let bumps = '';
+  for (let k = 0; k < 12; k++) {
+    const a = (k * Math.PI) / 6;
+    bumps += `<circle cx="${(50 + Math.cos(a) * 27.5).toFixed(1)}" cy="${(54 + Math.sin(a) * 27.5).toFixed(1)}" r="10.5"/>`;
+  }
+  return `<svg class="fluff ${cls}" viewBox="0 0 100 100" aria-hidden="true">
+    <g fill="#C9CED6">${bumps}<circle cx="50" cy="54" r="29"/></g>
+    <circle cx="46.5" cy="50" r="22.5" fill="#E3E7EC"/>
+    <g class="eye-open"><circle cx="41" cy="53" r="4" fill="#2D3B36"/><circle cx="59" cy="53" r="4" fill="#2D3B36"/><circle cx="39.6" cy="51.6" r="1.4" fill="#fff"/><circle cx="57.6" cy="51.6" r="1.4" fill="#fff"/></g>
+    <g class="eye-closed" fill="none" stroke="#2D3B36" stroke-width="2.6" stroke-linecap="round"><path d="M37 54q4-5 8 0"/><path d="M55 54q4-5 8 0"/></g>
+    <ellipse cx="34.5" cy="61.5" rx="4.6" ry="2.6" fill="#FFA9B8"/><ellipse cx="65.5" cy="61.5" rx="4.6" ry="2.6" fill="#FFA9B8"/>
+    <path d="M46 60q4 4 8 0" fill="none" stroke="#2D3B36" stroke-width="2.2" stroke-linecap="round"/>
+  </svg>`;
+}
+const STAR = (fill = '#2D3B36') => `<svg class="star" viewBox="0 0 24 24" aria-hidden="true"><path fill="${fill}" d="M12 1.5l2.3 7.2 7.2 2.3-7.2 2.3L12 20.5l-2.3-7.2L2.5 11l7.2-2.3z"/></svg>`;
+const CHECK = `<svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="3.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg>`;
+const ICON = {
+  gear: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3.2"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></svg>',
+  camera: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M4 8h3l2-3h6l2 3h3v11H4z"/><circle cx="12" cy="13" r="3.5"/></svg>',
+  eye: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/></svg>',
+  back: '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M15 5l-7 7 7 7"/></svg>'
+};
+function pips(v) {
+  const n = Math.ceil(v / 20);
+  let h = '';
+  for (let i = 0; i < 5; i++) h += STAR(i < n ? '#F2B321' : '#DDE8E0');
+  return `<div class="pips" aria-label="${v}% sparkly">${h}</div>`;
+}
+const avatar = (p, size = 32) => p ? `<span class="avatar" style="background:${p.color};width:${size}px;height:${size}px">${esc(p.name.slice(0, 1).toUpperCase())}</span>` : '';
+
+/* ---------- feedback: toasts, pops, sound, voice ---------- */
+function toast(msg, kind = '') {
+  const t = document.createElement('div');
+  t.className = 'toast ' + kind; t.textContent = msg;
+  $('#toasts').appendChild(t);
+  setTimeout(() => t.remove(), 3200);
+}
+function pop(text) {
+  const p = document.createElement('div');
+  p.className = 'pop'; p.textContent = text;
+  document.body.appendChild(p);
+  setTimeout(() => p.remove(), 1500);
+}
+let actx = null;
+function unlockAudio() {
+  try { actx = actx || new (window.AudioContext || window.webkitAudioContext)(); actx.resume(); } catch (e) { actx = null; }
+}
+function chime() {
+  if (!S.settings.sound || !actx) return;
+  const t = actx.currentTime;
+  [[784, 0], [1175, 0.09], [1568, 0.18]].forEach(([f, dt]) => {
+    const o = actx.createOscillator(), g = actx.createGain();
+    o.type = 'sine'; o.frequency.value = f;
+    g.gain.setValueAtTime(0, t + dt);
+    g.gain.linearRampToValueAtTime(0.16, t + dt + 0.02);
+    g.gain.exponentialRampToValueAtTime(0.001, t + dt + 0.5);
+    o.connect(g).connect(actx.destination);
+    o.start(t + dt); o.stop(t + dt + 0.55);
+  });
+}
+function speak(text) {
+  if (!S.settings.voice || !('speechSynthesis' in window) || !text) return;
+  try {
+    speechSynthesis.cancel();
+    const u = new SpeechSynthesisUtterance(text);
+    u.rate = 1.05; u.pitch = 1.25;
+    speechSynthesis.speak(u);
+  } catch (e) { /* ignore */ }
+}
+let typeToken = 0;
+const typed = {};
+function typeInto(el, text) {
+  if (!el) return;
+  const my = ++typeToken;
+  const key = el.id || 'x';
+  const repeat = typed[key] === text;
+  typed[key] = text;
+  if (reduceMotion || repeat) { el.innerHTML = esc(text) + '<span class="caret"></span>'; return; }
+  el.textContent = '';
+  let i = 0;
+  const step = () => {
+    if (my !== typeToken) return;
+    i += 2;
+    el.textContent = text.slice(0, i);
+    if (i < text.length) setTimeout(step, 24);
+    else el.innerHTML = esc(text) + '<span class="caret"></span>';
+  };
+  step();
+}
+
+/* ---------- scoring ---------- */
+function bumpStreak() {
+  const today = dayKey();
+  if (S.streak.last === today) return;
+  const y = dayKey(Date.now() - 864e5);
+  S.streak.count = S.streak.last === y ? S.streak.count + 1 : 1;
+  S.streak.last = today;
+}
+function checkUnlocks() {
+  DECOR.forEach((d) => {
+    if (S.household.lifetime >= d.c && !S.unlocked.includes(d.id)) {
+      S.unlocked.push(d.id);
+      toast(`Unlocked: ${d.e} ${d.n}`, 'win');
+    }
+  });
+}
+function awardTask(roomId, task, how) {
+  if (task.done) return 0;
+  const p = player();
+  const sess = S.sessions[roomId];
+  const room = roomById(roomId);
+  task.done = true; task.how = how; task.doneAt = Date.now(); task.by = p.id;
+  let gained = task.points;
+  p.sparkles += task.points;
+  S.household.lifetime += task.points;
+  const total = sess.tasks.reduce((a, t) => a + t.points, 0) || 1;
+  setShine(room, shineOf(room) + (100 * task.points) / total);
+  S.history.unshift({ ts: task.doneAt, room: room.name, title: task.title, pts: task.points, player: p.id, task: task.id });
+  if (sess.tasks.every((t) => t.done) && !sess.sweep) {
+    sess.sweep = true;
+    p.sparkles += 10; S.household.lifetime += 10; gained += 10;
+    setShine(room, 100);
+    S.history.unshift({ ts: Date.now(), room: room.name, title: 'Clean sweep bonus', pts: 10, player: p.id, task: 'sweep' });
+    setTimeout(() => toast('Clean sweep! +10 bonus sparkles', 'win'), 900);
+  }
+  S.history = S.history.slice(0, 300);
+  bumpStreak();
+  checkUnlocks();
+  save();
+  return gained;
+}
+function undoTask(roomId, task) {
+  const sess = S.sessions[roomId];
+  const room = roomById(roomId);
+  const p = S.players.find((x) => x.id === task.by) || player();
+  const total = sess.tasks.reduce((a, t) => a + t.points, 0) || 1;
+  p.sparkles = Math.max(0, p.sparkles - task.points);
+  S.household.lifetime = Math.max(0, S.household.lifetime - task.points);
+  setShine(room, shineOf(room) - (100 * task.points) / total);
+  S.history = S.history.filter((h) => h.task !== task.id);
+  if (sess.sweep) {
+    sess.sweep = false;
+    const sp = S.players.find((x) => S.history.some((h) => h.task === 'sweep' && h.player === x.id)) || p;
+    sp.sparkles = Math.max(0, sp.sparkles - 10);
+    S.household.lifetime = Math.max(0, S.household.lifetime - 10);
+    const i = S.history.findIndex((h) => h.task === 'sweep' && h.room === room.name);
+    if (i > -1) S.history.splice(i, 1);
+  }
+  task.done = false; delete task.how; delete task.doneAt; delete task.by;
+  save();
+}
+function applyVerify(roomId, res, how) {
+  const sess = S.sessions[roomId];
+  let count = 0, pts = 0;
+  (res.done || []).forEach((id) => {
+    const t = sess.tasks.find((x) => x.id === id && !x.done);
+    if (t) { pts += awardTask(roomId, t, how); count++; }
+  });
+  return { count, pts };
+}
+
+/* ---------- images ---------- */
+function loadImage(src) {
+  return new Promise((ok, bad) => { const i = new Image(); i.onload = () => ok(i); i.onerror = bad; i.src = src; });
+}
+function toJpeg(source, w, h, max, q) {
+  const s = Math.min(1, max / Math.max(w, h));
+  const c = document.createElement('canvas');
+  c.width = Math.round(w * s); c.height = Math.round(h * s);
+  c.getContext('2d').drawImage(source, 0, 0, c.width, c.height);
+  const dataUrl = c.toDataURL('image/jpeg', q);
+  return { dataUrl, b64: dataUrl.split(',')[1] };
+}
+async function fileToJpeg(file, max = 1280, q = 0.82) {
+  const url = URL.createObjectURL(file);
+  try { const img = await loadImage(url); return toJpeg(img, img.naturalWidth, img.naturalHeight, max, q); }
+  finally { URL.revokeObjectURL(url); }
+}
+
+/* ---------- AI helper (Cloudflare Worker) + demo mode ---------- */
+const DEMO_TASKS = [
+  { title: 'Toss the empty snack bag and cans on the coffee table', detail: 'Recycle the cans if you can.', zone: 'center', points: 3, minutes: 1, category: 'trash' },
+  { title: 'Move the pile of clothes off the armchair', detail: 'Clean ones to the drawer, dirty ones to the hamper.', zone: 'right', points: 6, minutes: 2, category: 'laundry' },
+  { title: 'Put the cereal box back in the cabinet', detail: '', zone: 'top-left', points: 2, minutes: 1, category: 'put-away' },
+  { title: 'Carry the dirty mugs to the sink', detail: '', zone: 'bottom-left', points: 4, minutes: 1, category: 'dishes' },
+  { title: 'Gather the toys on the rug into the bin', detail: 'Race the timer!', zone: 'bottom', points: 8, minutes: 4, category: 'put-away' },
+  { title: 'Stack the mail and magazines into one neat pile', detail: '', zone: 'center', points: 4, minutes: 2, category: 'surfaces' },
+  { title: 'Fold the throw blanket over the sofa arm', detail: '', zone: 'left', points: 3, minutes: 1, category: 'other' },
+  { title: 'Vacuum the crumbs under the coffee table', detail: '', zone: 'bottom-right', points: 12, minutes: 6, category: 'floors' }
+];
+const DEMO_LINES = ['Nice! That spot looks way better.', 'Look at you go. Another one down!', 'Sparkly! Keep that streak rolling.', 'Great work. What\'s next on the list?'];
+const NOCHANGE_LINES = ['No changes spotted yet. You\'ve got this!', 'Still looks the same from here. Try the next quick one.'];
+const wait = (ms) => new Promise((r) => setTimeout(r, ms));
+const api = {
+  get live() { return !!S.settings.workerUrl.trim(); },
+  base() { return S.settings.workerUrl.trim().replace(/\/+$/, ''); },
+  async call(path, body) {
+    const ctrl = new AbortController();
+    const timer = setTimeout(() => ctrl.abort(), 60000);
+    try {
+      const r = await fetch(this.base() + path, {
+        method: 'POST', signal: ctrl.signal,
+        headers: { 'Content-Type': 'application/json', 'X-App-Token': S.settings.token || '' },
+        body: JSON.stringify(body)
+      });
+      const j = await r.json().catch(() => ({}));
+      if (!r.ok) throw new Error(j.error || `The AI helper answered with error ${r.status}.`);
+      return j;
+    } catch (e) {
+      if (e.name === 'AbortError') throw new Error('The AI helper took too long to answer.');
+      if (e instanceof TypeError) throw new Error('Couldn\'t reach the AI helper. Check its address in Settings.');
+      throw e;
+    } finally { clearTimeout(timer); }
+  },
+  async analyze(b64, room) {
+    if (!this.live) {
+      await wait(1600);
+      return { summary: `Demo list for the ${room.toLowerCase()}. Connect your AI helper in Settings to get a list from your real photo.`, tasks: DEMO_TASKS.map((t) => ({ ...t })), demo: true };
+    }
+    return { ...(await this.call('/analyze', { image: b64, room })), demo: false };
+  },
+  async verify(beforeB64, afterB64, tasks) {
+    if (!this.live) {
+      await wait(1200);
+      if (Math.random() < 0.75 && tasks.length) {
+        const t = tasks[Math.floor(Math.random() * tasks.length)];
+        return { done: [t.id], feedback: DEMO_LINES[Math.floor(Math.random() * DEMO_LINES.length)] };
+      }
+      return { done: [], feedback: NOCHANGE_LINES[Math.floor(Math.random() * NOCHANGE_LINES.length)] };
+    }
+    return this.call('/verify', { before: beforeB64 || null, after: afterB64, tasks });
+  },
+  async health() {
+    const r = await fetch(this.base() + '/health', { headers: { 'X-App-Token': S.settings.token || '' } });
+    const j = await r.json().catch(() => ({}));
+    if (!r.ok) throw new Error(j.error || `Error ${r.status}`);
+    return j;
+  }
+};
+
+/* ---------- rendering ---------- */
+const app = $('#app');
+function topbar() {
+  const p = player();
+  return `<div class="topbar">
+    <button class="who" data-act="players" aria-label="Switch who's cleaning">${avatar(p)}<span>${esc(p ? p.name : '')}</span></button>
+    <div class="spark-pill" aria-label="${p ? p.sparkles : 0} sparkles">${STAR()}${p ? p.sparkles : 0}</div>
+    <button class="icon-btn" data-act="settings" aria-label="Settings">${ICON.gear}</button>
+  </div>`;
+}
+function render() {
+  document.querySelectorAll('.tab').forEach((t) => t.setAttribute('aria-current', t.dataset.view === ui.view || (ui.view === 'room' && t.dataset.view === 'home') ? 'page' : 'false'));
+  $('#tabbar').hidden = ui.view === 'room';
+  app.style.paddingBottom = ui.view === 'room' ? 'calc(var(--safe-b) + 150px)' : '';
+  if (!S.players.length) { app.innerHTML = ''; openWelcome(); return; }
+  if (ui.view === 'room') renderRoom();
+  else if (ui.view === 'rewards') renderRewards();
+  else renderHome();
+}
+function weekPoints(pid) {
+  const since = Date.now() - 7 * 864e5;
+  return S.history.filter((h) => h.player === pid && h.ts >= since).reduce((a, h) => a + h.pts, 0);
+}
+function renderHome() {
+  const p = player();
+  const neediest = [...S.rooms].sort((a, b) => shineOf(a) - shineOf(b))[0];
+  const openRoom = S.rooms.find((r) => S.sessions[r.id] && S.sessions[r.id].tasks.some((t) => !t.done));
+  let line = `Hi ${p.name}! Which room are we tackling?`;
+  if (openRoom) line = `Hi ${p.name}! The ${openRoom.name.toLowerCase()} list is still waiting for you.`;
+  else if (neediest && shineOf(neediest) < 40) line = `Hi ${p.name}! The ${neediest.name.toLowerCase()} could use some love.`;
+  const doneWeek = S.history.filter((h) => h.ts >= Date.now() - 7 * 864e5 && h.task !== 'sweep').length;
+  app.innerHTML = topbar() + `
+    <div class="speaker">${fluffSVG()}<div class="dialog"><span class="tag">Fluff</span><span id="homeLine"></span></div></div>
+    <div class="stats">
+      <div class="stat"><b>${S.streak.last === dayKey() || S.streak.last === dayKey(Date.now() - 864e5) ? S.streak.count : 0}</b><span>day streak</span></div>
+      <div class="stat"><b>${doneWeek}</b><span>chores this week</span></div>
+      <div class="stat"><b>${S.unlocked.length}</b><span>decor unlocked</span></div>
+    </div>
+    <h2 class="section-title">Rooms</h2>
+    <div class="rooms">
+      ${S.rooms.map((r) => {
+        const v = shineOf(r);
+        const sess = S.sessions[r.id];
+        const left = sess ? sess.tasks.filter((t) => !t.done).length : 0;
+        return `<button class="room" data-act="room" data-id="${r.id}">
+          ${left ? `<span class="badge">${left} to do</span>` : ''}
+          <span class="emo">${esc(r.emoji)}</span><span class="nm">${esc(r.name)}</span>
+          <span class="shine-note ${v < 40 ? 'low' : ''}">${v >= 80 ? 'Sparkling' : v >= 40 ? 'Pretty good' : 'Needs love'}</span>
+          ${pips(v)}
+        </button>`;
+      }).join('')}
+      <button class="room add" data-act="add-room">+ Add a room</button>
+    </div>
+    ${api.live ? '' : '<p class="demo-note">You\'re in <b>demo mode</b>. Tasks are samples until you connect your AI helper in Settings.</p>'}`;
+  typeInto($('#homeLine'), line);
+}
+function renderRoom() {
+  const room = roomById(ui.roomId);
+  if (!room) { ui.view = 'home'; return render(); }
+  const sess = S.sessions[room.id];
+  const head = `<button class="back" data-act="home">${ICON.back}House</button>
+    <div class="room-head"><span class="emo">${esc(room.emoji)}</span><div><h1>${esc(room.name)}</h1>${pips(shineOf(room))}</div></div>`;
+  if (!sess || !sess.tasks.length) {
+    app.innerHTML = head + `
+      <div class="empty">
+        ${fluffSVG('lg')}
+        <div class="dialog"><span class="tag">Fluff</span><span id="roomLine"></span></div>
+      </div>
+      <div class="actions"><div class="inner">
+        <button class="btn primary" data-act="photo" data-src="cam">${ICON.camera}Take a photo</button>
+        <button class="btn" data-act="photo" data-src="lib">Choose from library</button>
+      </div></div>`;
+    typeInto($('#roomLine'), sess && sess.summary ? sess.summary : 'Snap a photo of the mess and I\'ll turn it into a list. Stand in the doorway so I can see as much of the room as possible.');
+    return;
+  }
+  const img = mem.before[room.id];
+  const open = sess.tasks.filter((t) => !t.done);
+  const done = sess.tasks.length - open.length;
+  const zoneCounts = {};
+  open.forEach((t) => { if (t.zone) zoneCounts[t.zone] = (zoneCounts[t.zone] || 0) + 1; });
+  const sel = sess.tasks.find((t) => t.id === mem.selected);
+  const photo = img
+    ? `<div class="photo"><img src="${img.dataUrl}" alt="Your photo of the ${esc(room.name.toLowerCase())}">
+        <div class="zones">${ZONES.map((z) => `<div class="zone ${sel && sel.zone === z ? 'hot' : ''}">${zoneCounts[z] ? `<button class="mk" data-act="zone" data-zone="${z}" aria-label="${zoneCounts[z]} tasks here">${zoneCounts[z]}</button>` : ''}</div>`).join('')}</div></div>`
+    : `<div class="no-photo">${fluffSVG()}<span>Photos aren't kept after you close the app. Use “Scan again” to see where each task is.</span></div>`;
+  const fb = mem.lastFeedback[room.id] || sess.summary || '';
+  app.innerHTML = head + photo + `
+    ${fb ? `<div class="speaker">${fluffSVG(done === sess.tasks.length ? 'happy' : '')}<div class="dialog"><span class="tag">Fluff</span><span id="roomLine"></span></div></div>` : ''}
+    <div class="progress"><span>${done} of ${sess.tasks.length} done</span><div class="bar"><i style="width:${(100 * done) / sess.tasks.length}%"></i></div></div>
+    <ul class="tasks">${sess.tasks.map((t) => {
+      const by = t.done ? S.players.find((p) => p.id === t.by) : null;
+      return `<li class="task ${t.done ? 'done' : ''} ${mem.selected === t.id ? 'sel' : ''}" data-act="select" data-id="${t.id}">
+        <button class="tick" data-act="toggle" data-id="${t.id}" aria-pressed="${t.done}" aria-label="${t.done ? 'Undo' : 'Mark done'}: ${esc(t.title)}">${CHECK}</button>
+        <div class="tbody"><div class="ttl">${esc(t.title)}</div>${t.detail && !t.done ? `<div class="tdet">${esc(t.detail)}</div>` : ''}${by ? `<div class="by">${esc(by.name)}${t.how === 'coach' || t.how === 'photo' ? ', checked by Fluff' : ''}</div>` : ''}</div>
+        <div class="tmeta"><span class="pts">${t.points} ✦</span>${t.minutes ? `<span class="min">${t.minutes} min</span>` : ''}</div>
+      </li>`;
+    }).join('')}</ul>
+    <div class="row" style="margin-top:14px;justify-content:center;flex-wrap:wrap">
+      <button class="btn text" data-act="add-task">Add a task</button>
+      <button class="btn text" data-act="photo" data-src="cam" data-mode="rescan">Scan again</button>
+      <button class="btn text" data-act="finish">Finish up</button>
+    </div>
+    ${sess.demo ? '<p class="demo-note">These are <b>demo tasks</b>, not from your photo.</p>' : ''}
+    <div class="actions"><div class="inner">
+      ${open.length ? `<button class="btn primary" data-act="coach">${ICON.eye}Start Coach Mode</button>
+      <button class="btn" data-act="photo" data-src="cam" data-mode="after">${ICON.camera}Check my work</button>`
+      : `<button class="btn sun" data-act="finish">All done! Finish up</button>`}
+    </div></div>`;
+  if (fb) typeInto($('#roomLine'), fb);
+}
+function renderRewards() {
+  const next = DECOR.find((d) => !S.unlocked.includes(d.id));
+  const board = [...S.players].sort((a, b) => weekPoints(b.id) - weekPoints(a.id));
+  const recent = S.history.slice(0, 12);
+  app.innerHTML = topbar() + `
+    <h2 class="section-title">Decor shelf</h2>
+    <p class="next">${next ? `${next.c - S.household.lifetime} more household sparkles until the ${next.n.toLowerCase()}.` : 'You\'ve unlocked every piece. Your 3D house is going to be packed!'}</p>
+    <div class="shelf">${DECOR.map((d) => {
+      const got = S.unlocked.includes(d.id);
+      return `<div class="decor ${got ? '' : 'locked'}"><span class="e">${d.e}</span><span class="n">${got ? d.n : 'Locked'}</span>${got ? '' : `<span class="c">${d.c} ✦</span>`}</div>`;
+    }).join('')}</div>
+    <h2 class="section-title mt">This week</h2>
+    <div class="panel"><ol class="board">${board.map((p) => `<li>${avatar(p, 30)}${esc(p.name)}<span class="sc">${weekPoints(p.id)} ✦</span></li>`).join('')}</ol></div>
+    <h2 class="section-title mt">Recent</h2>
+    <div class="panel">${recent.length ? `<ul class="log">${recent.map((h) => {
+      const p = S.players.find((x) => x.id === h.player);
+      return `<li><span>${esc(p ? p.name : '?')}</span><span>${esc(h.title)}</span><span>+${h.pts}</span></li>`;
+    }).join('')}</ul>` : '<p style="margin:0;font-weight:700;color:var(--ink-soft)">Finished chores show up here. Pick a room to get started.</p>'}</div>`;
+}
+
+/* ---------- sheets ---------- */
+function openSheet(html, onMount) {
+  closeSheet();
+  const w = document.createElement('div');
+  w.className = 'sheet-wrap'; w.id = 'sheet';
+  w.innerHTML = `<div class="sheet" role="dialog" aria-modal="true">${html}</div>`;
+  w.addEventListener('click', (e) => { if (e.target === w && S.players.length) closeSheet(); });
+  document.body.appendChild(w);
+  if (onMount) onMount(w);
+  const f = w.querySelector('input,button');
+  if (f) setTimeout(() => f.focus(), 50);
+}
+function closeSheet() { const s = $('#sheet'); if (s) s.remove(); }
+
+function openWelcome() {
+  openSheet(`
+    <div class="speaker" style="margin-bottom:18px">${fluffSVG('lg')}<div class="dialog"><span class="tag">Fluff</span>Hi! I'm Fluff. Snap a messy room and I'll turn it into a list. Every chore you finish earns sparkles.</div></div>
+    <label class="field">Who's cleaning?<input id="wName" placeholder="Your name" maxlength="20" autocomplete="given-name"></label>
+    <button class="btn primary" data-act="welcome-go" style="width:100%">Let's go</button>`);
+}
+function openPlayers() {
+  openSheet(`<h2>Who's cleaning?</h2>
+    <ul class="plist">${S.players.map((p) => `<li class="${p.id === S.current ? 'cur' : ''}"><button class="pick" data-act="pick-player" data-id="${p.id}">${avatar(p)}${esc(p.name)}</button><span>${p.sparkles} ✦</span></li>`).join('')}</ul>
+    <label class="field">Add someone<input id="newPlayer" placeholder="Name" maxlength="20"></label>
+    <button class="btn" data-act="add-player" style="width:100%">Add to the household</button>`);
+}
+function openSettings() {
+  const st = S.settings;
+  openSheet(`<h2>Settings</h2>
+    <h3>AI helper</h3>
+    <label class="field">Helper address<input id="sUrl" inputmode="url" autocapitalize="off" autocorrect="off" placeholder="https://sparkle-helper.yourname.workers.dev" value="${esc(st.workerUrl)}"><small>Leave blank to stay in demo mode.</small></label>
+    <label class="field">Household passcode<input id="sToken" autocapitalize="off" autocorrect="off" value="${esc(st.token)}"><small>Must match the APP_TOKEN you set on the helper.</small></label>
+    <button class="btn small" data-act="test-helper">Test connection</button>
+    <div id="sStatus"></div>
+    <h3>Coach Mode</h3>
+    <label class="field"><span>Wait at least <span id="gapVal">${st.minGap}</span> seconds between checks</span><input id="sGap" type="range" min="10" max="60" step="5" value="${st.minGap}"></label>
+    <label class="toggle">Sound when chores are done<input id="sSound" type="checkbox" ${st.sound ? 'checked' : ''}></label>
+    <label class="toggle">Fluff talks out loud<input id="sVoice" type="checkbox" ${st.voice ? 'checked' : ''}></label>
+    <h3>Rooms</h3>
+    <ul class="plist">${S.rooms.map((r) => `<li><span style="font-size:24px">${esc(r.emoji)}</span><span style="flex:1">${esc(r.name)}</span><button class="btn text" data-act="del-room" data-id="${r.id}">Remove</button></li>`).join('')}</ul>
+    <h3>Privacy</h3>
+    <p style="font-weight:600;margin:0 0 12px">Photos go to your AI helper to be checked and aren't saved on this phone or the helper. Points and lists are stored only on this phone.</p>
+    <button class="btn text" data-act="reset" style="color:#C2405E">Reset everything</button>
+    <div class="row" style="margin-top:16px"><button class="btn primary" data-act="save-settings">Save settings</button></div>`,
+  (w) => { w.querySelector('#sGap').addEventListener('input', (e) => { w.querySelector('#gapVal').textContent = e.target.value; }); });
+}
+function openAddRoom() {
+  let pick = ROOM_EMOJI[0];
+  openSheet(`<h2>Add a room</h2>
+    <label class="field">Room name<input id="rName" placeholder="Garage" maxlength="24"></label>
+    <div class="field">Icon<div class="emoji-pick">${ROOM_EMOJI.map((e, i) => `<button type="button" data-emo="${e}" aria-pressed="${i === 0}">${e}</button>`).join('')}</div></div>
+    <button class="btn primary" data-act="save-room" style="width:100%">Add room</button>`,
+  (w) => {
+    w.querySelectorAll('[data-emo]').forEach((b) => b.addEventListener('click', () => {
+      w.querySelectorAll('[data-emo]').forEach((x) => x.setAttribute('aria-pressed', 'false'));
+      b.setAttribute('aria-pressed', 'true'); pick = b.dataset.emo; w.dataset.emo = pick;
+    }));
+    w.dataset.emo = pick;
+  });
+}
+function openAddTask() {
+  openSheet(`<h2>Add a task</h2>
+    <label class="field">What needs doing?<input id="tTitle" placeholder="Wipe down the counters" maxlength="90"></label>
+    <label class="field">How big is it?<select id="tPts">
+      <option value="3">Quick grab, 3 ✦</option><option value="6" selected>A few minutes, 6 ✦</option>
+      <option value="10">Real effort, 10 ✦</option><option value="18">Big job, 18 ✦</option></select></label>
+    <button class="btn primary" data-act="save-task" style="width:100%">Add task</button>`);
+}
+function openFinish() {
+  const room = roomById(ui.roomId);
+  const sess = S.sessions[room.id];
+  const done = sess.tasks.filter((t) => t.done);
+  const pts = done.reduce((a, t) => a + t.points, 0) + (sess.sweep ? 10 : 0);
+  openSheet(`<div class="speaker" style="margin-bottom:16px">${fluffSVG('lg happy')}<div class="dialog"><span class="tag">Fluff</span>${done.length === sess.tasks.length ? `The ${esc(room.name.toLowerCase())} is sparkling!` : `Nice session in the ${esc(room.name.toLowerCase())}.`} You finished ${done.length} of ${sess.tasks.length} chores for ${pts} sparkles.</div></div>
+    <div class="row"><button class="btn primary" data-act="clear-list">Clear the list</button><button class="btn" data-act="close-sheet">Keep it</button></div>`);
+}
+
+/* ---------- photo flows ---------- */
+let photoMode = 'before';
+function askPhoto(src, mode) {
+  photoMode = mode || 'before';
+  unlockAudio();
+  const input = src === 'lib' ? $('#inLib') : $('#inCam');
+  input.value = '';
+  input.click();
+}
+function busy(text) {
+  const b = document.createElement('div');
+  b.className = 'busy'; b.id = 'busy';
+  b.innerHTML = fluffSVG('lg') + `<p>${esc(text)}</p>`;
+  document.body.appendChild(b);
+}
+const unbusy = () => { const b = $('#busy'); if (b) b.remove(); };
+async function onPhoto(file) {
+  if (!file) return;
+  const room = roomById(ui.roomId);
+  if (!room) return;
+  if (photoMode === 'after') return checkWithPhoto(file, room);
+  busy('Taking a look…');
+  try {
+    const img = await fileToJpeg(file, 1280, 0.82);
+    const res = await api.analyze(img.b64, room.name);
+    const small = await fileToJpeg(file, 768, 0.78);
+    mem.before[room.id] = { dataUrl: img.dataUrl, small: small.b64 };
+    const prev = S.sessions[room.id];
+    const kept = prev ? prev.tasks.filter((t) => t.done) : [];
+    const tasks = (res.tasks || []).map((t) => ({ id: uid(), title: t.title, detail: t.detail || '', zone: ZONES.includes(t.zone) ? t.zone : null, points: clamp(Number(t.points) || 3, 1, 25), minutes: clamp(Number(t.minutes) || 0, 0, 90), category: t.category || 'other', done: false }));
+    S.sessions[room.id] = { tasks: [...kept, ...tasks], summary: res.summary || '', createdAt: Date.now(), demo: !!res.demo, sweep: prev && kept.length ? prev.sweep && !tasks.length : false };
+    if (!tasks.length) {
+      setShine(room, Math.max(shineOf(room), 90));
+      if (!kept.length) delete S.sessions[room.id];
+      toast(res.summary || 'Looks tidy already!', 'win');
+    }
+    delete mem.lastFeedback[room.id];
+    mem.selected = null;
+    save();
+  } catch (e) {
+    toast(e.message || 'Something went wrong. Try again.');
+  } finally { unbusy(); render(); }
+}
+async function checkWithPhoto(file, room) {
+  const sess = S.sessions[room.id];
+  const open = sess.tasks.filter((t) => !t.done);
+  busy('Checking your work…');
+  try {
+    const after = await fileToJpeg(file, 960, 0.8);
+    const before = mem.before[room.id];
+    const res = await api.verify(before ? before.small : null, after.b64, open.map((t) => ({ id: t.id, title: t.title, zone: t.zone })));
+    const r = applyVerify(room.id, res, 'photo');
+    mem.lastFeedback[room.id] = res.feedback || (r.count ? 'Nice work!' : 'I couldn\'t spot changes yet.');
+    unbusy();
+    if (r.count) { pop(`+${r.pts} ✦`); unlockAudio(); chime(); }
+  } catch (e) {
+    toast(e.message || 'Couldn\'t check that photo. Try again.');
+  } finally { unbusy(); render(); }
+}
+$('#inCam').addEventListener('change', (e) => onPhoto(e.target.files[0]));
+$('#inLib').addEventListener('change', (e) => onPhoto(e.target.files[0]));
+
+/* ---------- Coach Mode ---------- */
+const MOVE = 6;        // average pixel change that counts as "someone is working"
+const CALM = 3.5;
+const SETTLE_MS = 2500; // how long the scene must stay still before a check
+const C = { el: null, stream: null, video: null, loop: null, clock: null, wake: null, roomId: null, start: 0, pts: 0, motion: 0, lastMotion: 0, activity: false, lastCheck: 0, checking: false, prev: null, ctx: null, lastStatus: '' };
+function coachLine(text, voice = true) { typeInto($('#coachLine'), text); if (voice) speak(text); }
+function coachFluff(happy) {
+  const f = C.el && C.el.querySelector('.bottom .fluff');
+  if (!f) return;
+  f.classList.toggle('happy', happy);
+  if (happy) setTimeout(() => f.classList.remove('happy'), 2200);
+}
+async function startCoach(roomId) {
+  unlockAudio();
+  const room = roomById(roomId);
+  Object.assign(C, { roomId, start: Date.now(), pts: 0, motion: 0, lastMotion: 0, activity: false, lastCheck: Date.now(), checking: false, prev: null, lastStatus: '' });
+  const el = document.createElement('section');
+  el.className = 'coach'; el.id = 'coach';
+  el.setAttribute('aria-label', 'Coach Mode');
+  el.innerHTML = `<video playsinline muted autoplay></video>
+    <div class="hud">
+      <button class="chip" data-act="coach-end">End</button>
+      <span class="chip status"><span class="dot" id="cDot"></span><span id="cStatus">Starting camera</span></span>
+      <span class="chip timer" id="cTime">0:00</span>
+      <span class="chip score">${STAR()}<span id="cPts">0</span></span>
+    </div>
+    <div class="bottom">
+      <div class="speaker">${fluffSVG()}<div class="dialog"><span class="tag">Fluff</span><span id="coachLine"></span></div></div>
+      <div class="coach-tasks" id="cTasks"></div>
+      <div class="row"><button class="btn sun" data-act="coach-check">Check now</button></div>
+    </div>`;
+  document.body.appendChild(el);
+  C.el = el; C.video = el.querySelector('video');
+  renderCoachTasks();
+  const firstTime = !S.coachTipSeen;
+  coachLine(firstTime ? 'Prop me up where I can see the whole room, then get to work. I\'ll check whenever you step out of the way.' : `Let's make the ${room.name.toLowerCase()} sparkle! I'll check when you step back.`);
+  S.coachTipSeen = true; save();
+  try {
+    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) throw new Error('nocam');
+    C.stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: { ideal: 'environment' }, width: { ideal: 1280 }, height: { ideal: 960 } }, audio: false });
+    C.video.srcObject = C.stream;
+    await C.video.play().catch(() => {});
+  } catch (e) {
+    $('#cStatus').textContent = 'No camera';
+    coachLine('I can\'t see through the camera. Allow camera access for this app in your phone\'s settings, then try again.', false);
+    return;
+  }
+  const small = document.createElement('canvas');
+  small.width = 48; small.height = 36;
+  C.ctx = small.getContext('2d', { willReadFrequently: true });
+  wakeOn();
+  if (!mem.before[roomId]) setTimeout(() => { if (C.video && C.video.videoWidth) { const f = grabFrame(768); mem.before[roomId] = { dataUrl: f.dataUrl, small: f.b64 }; } }, 1500);
+  C.loop = setInterval(coachTick, 200);
+  C.clock = setInterval(() => {
+    const s = Math.floor((Date.now() - C.start) / 1000);
+    const t = $('#cTime'); if (t) t.textContent = `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
+  }, 1000);
+}
+function renderCoachTasks() {
+  const sess = S.sessions[C.roomId];
+  const box = $('#cTasks');
+  if (!box || !sess) return;
+  const sorted = [...sess.tasks].sort((a, b) => a.done - b.done);
+  box.innerHTML = sorted.map((t) => `<button class="ctask ${t.done ? 'done' : ''}" data-act="coach-toggle" data-id="${t.id}" aria-pressed="${t.done}"><span>${esc(t.title)}</span><span class="pts">${t.points}</span></button>`).join('');
+  $('#cPts').textContent = C.pts;
+}
+function grabFrame(max) {
+  const v = C.video;
+  return toJpeg(v, v.videoWidth, v.videoHeight, max, 0.8);
+}
+function setStatus(kind, text) {
+  const key = kind + text;
+  if (key === C.lastStatus) return;
+  C.lastStatus = key;
+  const d = $('#cDot'), s = $('#cStatus');
+  if (d) d.className = 'dot ' + kind;
+  if (s) s.textContent = text;
+}
+function coachTick() {
+  if (document.hidden || !C.video || !C.video.videoWidth || !C.ctx) return;
+  C.ctx.drawImage(C.video, 0, 0, 48, 36);
+  const d = C.ctx.getImageData(0, 0, 48, 36).data;
+  const g = new Uint8Array(48 * 36);
+  let sum = 0;
+  for (let i = 0; i < g.length; i++) {
+    g[i] = (d[i * 4] * 3 + d[i * 4 + 1] * 6 + d[i * 4 + 2]) / 10;
+    if (C.prev) sum += Math.abs(g[i] - C.prev[i]);
+  }
+  if (C.prev) C.motion = C.motion * 0.5 + (sum / g.length) * 0.5;
+  C.prev = g;
+  const now = Date.now();
+  if (C.motion > MOVE) { C.lastMotion = now; C.activity = true; }
+  const gapLeft = Math.ceil((S.settings.minGap * 1000 - (now - C.lastCheck)) / 1000);
+  if (C.checking) return setStatus('checking', 'Checking…');
+  if (C.motion > MOVE) return setStatus('moving', 'You\'re working');
+  if (C.activity && gapLeft > 0) return setStatus('', `Check in ${gapLeft}s`);
+  if (C.activity && C.motion < CALM && now - C.lastMotion > SETTLE_MS) { runCheck(false); return; }
+  if (C.activity) return setStatus('', 'Step back');
+  setStatus('', 'Watching');
+}
+async function runCheck(manual) {
+  const sess = S.sessions[C.roomId];
+  if (C.checking || !sess || !C.video || !C.video.videoWidth) return;
+  const open = sess.tasks.filter((t) => !t.done);
+  if (!open.length) return;
+  C.checking = true; C.activity = false; C.lastCheck = Date.now();
+  setStatus('checking', 'Checking…');
+  const after = grabFrame(960);
+  const before = mem.before[C.roomId];
+  try {
+    const res = await api.verify(before ? before.small : null, after.b64, open.map((t) => ({ id: t.id, title: t.title, zone: t.zone })));
+    if (!C.el) return;
+    const r = applyVerify(C.roomId, res, 'coach');
+    if (r.count) {
+      C.pts += r.pts;
+      pop(`+${r.pts} ✦`); chime(); coachFluff(true);
+      coachLine(res.feedback || 'Nice work!');
+    } else if (manual) {
+      coachLine(res.feedback || 'No changes spotted yet. Keep going!');
+    } else if (res.feedback) {
+      coachLine(res.feedback, false);
+    }
+    renderCoachTasks();
+    if (sess.tasks.every((t) => t.done)) coachDone();
+  } catch (e) {
+    if (C.el) coachLine('I couldn\'t reach the AI helper. I\'ll try again on the next check.', false);
+  } finally { C.checking = false; C.lastCheck = Date.now(); C.lastStatus = ''; }
+}
+function coachDone() {
+  coachFluff(true);
+  setTimeout(() => coachLine(`Every chore is done! The room is sparkling. You earned ${C.pts} sparkles this session.`), 1200);
+  const row = C.el.querySelector('.bottom .row');
+  row.innerHTML = '<button class="btn sun" data-act="coach-end">Finish</button>';
+}
+async function wakeOn() {
+  try { if ('wakeLock' in navigator && !document.hidden) C.wake = await navigator.wakeLock.request('screen'); } catch (e) { /* not supported */ }
+}
+function stopCoach() {
+  clearInterval(C.loop); clearInterval(C.clock);
+  if (C.stream) C.stream.getTracks().forEach((t) => t.stop());
+  if (C.wake) { C.wake.release().catch(() => {}); C.wake = null; }
+  if ('speechSynthesis' in window) speechSynthesis.cancel();
+  if (C.el) C.el.remove();
+  Object.assign(C, { el: null, stream: null, video: null, ctx: null });
+  render();
+}
+document.addEventListener('visibilitychange', () => {
+  if (!document.hidden && C.el) { wakeOn(); C.prev = null; C.lastCheck = Date.now(); }
+});
+
+/* ---------- events ---------- */
+document.addEventListener('click', (e) => {
+  const a = e.target.closest('[data-act]');
+  if (!a) return;
+  const act = a.dataset.act, id = a.dataset.id;
+  switch (act) {
+    case 'tab': ui.view = a.dataset.view; mem.selected = null; window.scrollTo(0, 0); render(); break;
+    case 'home': ui.view = 'home'; mem.selected = null; window.scrollTo(0, 0); render(); break;
+    case 'room': ui.view = 'room'; ui.roomId = id; mem.selected = null; window.scrollTo(0, 0); render(); break;
+    case 'photo': askPhoto(a.dataset.src, a.dataset.mode === 'after' ? 'after' : 'before'); break;
+    case 'select': {
+      mem.selected = mem.selected === id ? null : id;
+      render();
+      break;
+    }
+    case 'zone': {
+      const sess = S.sessions[ui.roomId];
+      const t = sess.tasks.find((x) => x.zone === a.dataset.zone && !x.done);
+      if (t) { mem.selected = t.id; render(); const li = app.querySelector(`.task[data-id="${t.id}"]`); if (li) li.scrollIntoView({ block: 'center', behavior: reduceMotion ? 'auto' : 'smooth' }); }
+      break;
+    }
+    case 'toggle': {
+      e.stopPropagation();
+      const sess = S.sessions[ui.roomId];
+      const t = sess.tasks.find((x) => x.id === id);
+      if (!t) break;
+      unlockAudio();
+      if (t.done) { undoTask(ui.roomId, t); }
+      else { const g = awardTask(ui.roomId, t, 'hand'); pop(`+${g} ✦`); chime(); }
+      render();
+      break;
+    }
+    case 'coach': startCoach(ui.roomId); break;
+    case 'coach-end': stopCoach(); break;
+    case 'coach-check': unlockAudio(); runCheck(true); break;
+    case 'coach-toggle': {
+      const sess = S.sessions[C.roomId];
+      const t = sess && sess.tasks.find((x) => x.id === id);
+      if (!t) break;
+      if (t.done) { if (t.how === 'hand') { C.pts = Math.max(0, C.pts - t.points); undoTask(C.roomId, t); } }
+      else { const g = awardTask(C.roomId, t, 'hand'); C.pts += g; pop(`+${g} ✦`); chime(); coachFluff(true); }
+      renderCoachTasks();
+      if (sess.tasks.every((x) => x.done)) coachDone();
+      break;
+    }
+    case 'add-task': openAddTask(); break;
+    case 'save-task': {
+      const title = $('#tTitle').value.trim();
+      if (!title) { $('#tTitle').focus(); break; }
+      const sess = S.sessions[ui.roomId];
+      sess.tasks.push({ id: uid(), title, detail: '', zone: null, points: Number($('#tPts').value), minutes: 0, category: 'other', done: false });
+      sess.sweep = false;
+      save(); closeSheet(); render();
+      break;
+    }
+    case 'finish': openFinish(); break;
+    case 'clear-list': {
+      const room = roomById(ui.roomId);
+      const sess = S.sessions[room.id];
+      if (sess && sess.tasks.every((t) => t.done)) setShine(room, 100);
+      delete S.sessions[room.id]; delete mem.before[room.id]; delete mem.lastFeedback[room.id];
+      save(); closeSheet(); ui.view = 'home'; render();
+      break;
+    }
+    case 'close-sheet': closeSheet(); break;
+    case 'players': openPlayers(); break;
+    case 'pick-player': S.current = id; save(); closeSheet(); render(); break;
+    case 'add-player': {
+      const name = $('#newPlayer').value.trim();
+      if (!name) { $('#newPlayer').focus(); break; }
+      const p = { id: uid(), name, color: PLAYER_COLORS[S.players.length % PLAYER_COLORS.length], sparkles: 0 };
+      S.players.push(p); S.current = p.id; save(); closeSheet(); render();
+      break;
+    }
+    case 'welcome-go': {
+      const name = $('#wName').value.trim();
+      if (!name) { $('#wName').focus(); break; }
+      const p = { id: uid(), name, color: PLAYER_COLORS[0], sparkles: 0 };
+      S.players = [p]; S.current = p.id; save(); closeSheet(); render();
+      break;
+    }
+    case 'settings': openSettings(); break;
+    case 'test-helper': {
+      const st = $('#sStatus');
+      S.settings.workerUrl = $('#sUrl').value.trim(); S.settings.token = $('#sToken').value.trim();
+      if (!api.live) { st.innerHTML = '<div class="status bad">Add the helper address first.</div>'; break; }
+      st.innerHTML = '<div class="status">Testing…</div>';
+      api.health().then(() => { st.innerHTML = '<div class="status ok">Connected. Fluff can see your photos now.</div>'; save(); })
+        .catch((err) => { st.innerHTML = `<div class="status bad">${esc(err.message === 'Failed to fetch' || err instanceof TypeError ? 'Couldn\'t reach that address.' : err.message)}</div>`; });
+      break;
+    }
+    case 'save-settings': {
+      S.settings.workerUrl = $('#sUrl').value.trim();
+      S.settings.token = $('#sToken').value.trim();
+      S.settings.minGap = Number($('#sGap').value);
+      S.settings.sound = $('#sSound').checked;
+      S.settings.voice = $('#sVoice').checked;
+      save(); closeSheet(); toast('Settings saved'); render();
+      break;
+    }
+    case 'add-room': openAddRoom(); break;
+    case 'save-room': {
+      const name = $('#rName').value.trim();
+      if (!name) { $('#rName').focus(); break; }
+      S.rooms.push({ id: uid(), name, emoji: $('#sheet').dataset.emo || '🏠', shine: 50, shineAt: Date.now() });
+      save(); closeSheet(); render();
+      break;
+    }
+    case 'del-room': {
+      const r = roomById(id);
+      if (r && confirm(`Remove the ${r.name}? Its chore list goes too.`)) {
+        S.rooms = S.rooms.filter((x) => x.id !== id); delete S.sessions[id];
+        save(); openSettings(); render();
+      }
+      break;
+    }
+    case 'reset': {
+      if (confirm('Reset everything? This clears all players, sparkles, rooms and lists on this phone.')) {
+        try { localStorage.removeItem(STORE_KEY); } catch (err) { /* ignore */ }
+        S = fresh(); closeSheet(); ui = { view: 'home', roomId: null }; render();
+      }
+      break;
+    }
+  }
+});
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape' && $('#sheet') && S.players.length) closeSheet();
+  if (e.key === 'Enter' && e.target.matches('#wName')) $('[data-act="welcome-go"]').click();
+  if (e.key === 'Enter' && e.target.matches('#newPlayer')) $('[data-act="add-player"]').click();
+  if (e.key === 'Enter' && e.target.matches('#tTitle')) $('[data-act="save-task"]').click();
+  if (e.key === 'Enter' && e.target.matches('#rName')) $('[data-act="save-room"]').click();
+});
+
+render();
+if ('serviceWorker' in navigator && (location.protocol === 'https:' || location.hostname === 'localhost')) {
+  navigator.serviceWorker.register('sw.js').catch(() => {});
+}
+</script>
+</body>
+</html>

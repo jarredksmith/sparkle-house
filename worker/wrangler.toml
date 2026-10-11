@@ -1,0 +1,10 @@
+name = "sparkle-helper"
+main = "worker.js"
+compatibility_date = "2026-10-01"
+
+[vars]
+# Lock the helper to your GitHub Pages site (no trailing slash).
+ALLOWED_ORIGINS = "https://YOUR-GITHUB-USERNAME.github.io"
+# Optional model overrides:
+# MODEL_ANALYZE = "claude-sonnet-5-5"
+# MODEL_VERIFY = "claude-haiku-5-5"
