@@ -26,7 +26,7 @@ Rules:
 - "zone" is the ninth of the photo where the item sits: one of ${ZONES.join(', ')}.
 - Return 3 to 12 tasks. If the room already looks tidy, return no tasks and say so in the summary. If the photo isn't of a room, return no tasks and say what you see in the summary.
 
-Give your answer by calling the chore_list tool.`;
+Answer with the chore list in the required JSON format.`;
 
 const VERIFY_SYSTEM = `You check progress in a family chore game. You get the open chores for a room, a recent AFTER photo, and usually a BEFORE photo taken when the list was made.
 
@@ -36,48 +36,44 @@ Rules:
 - Mark a task done only when the AFTER photo clearly shows it is finished. If the area is hidden, blocked, or out of frame, do not mark it done.
 - Be fair but encouraging. Never mark a task done just to be nice.
 
-Give your answer by calling the progress_check tool.`;
+Answer in the required JSON format.`;
 
-// Tools force Claude to answer in a fixed structure instead of free text.
-const CHORE_TOOL = {
-  name: 'chore_list',
-  description: 'Return the chore list for the room in the photo.',
-  input_schema: {
-    type: 'object',
-    properties: {
-      room_guess: { type: 'string', description: 'What kind of room this looks like.' },
-      summary: { type: 'string', description: 'One upbeat sentence, max 20 words, about the room.' },
-      tasks: {
-        type: 'array',
-        items: {
-          type: 'object',
-          properties: {
-            title: { type: 'string', description: 'The chore, max 70 characters, naming the specific visible object.' },
-            detail: { type: 'string', description: 'Short optional tip, or an empty string.' },
-            zone: { type: 'string', enum: ZONES },
-            points: { type: 'integer', minimum: 1, maximum: 25 },
-            minutes: { type: 'integer', minimum: 1, maximum: 90 },
-            category: { type: 'string', enum: CATEGORIES }
-          },
-          required: ['title', 'zone', 'points', 'minutes', 'category']
-        }
+// JSON schemas guarantee Claude's answer comes back in a fixed structure.
+// (Structured outputs require additionalProperties:false and don't support min/max.)
+const CHORE_SCHEMA = {
+  type: 'object',
+  properties: {
+    room_guess: { type: 'string', description: 'What kind of room this looks like.' },
+    summary: { type: 'string', description: 'One upbeat sentence, max 20 words, about the room.' },
+    tasks: {
+      type: 'array',
+      items: {
+        type: 'object',
+        properties: {
+          title: { type: 'string', description: 'The chore, max 70 characters, naming the specific visible object.' },
+          detail: { type: 'string', description: 'Short optional tip, or an empty string.' },
+          zone: { type: 'string', enum: ZONES },
+          points: { type: 'integer', description: 'Effort points from 1 to 25.' },
+          minutes: { type: 'integer', description: 'Estimated minutes from 1 to 90.' },
+          category: { type: 'string', enum: CATEGORIES }
+        },
+        required: ['title', 'detail', 'zone', 'points', 'minutes', 'category'],
+        additionalProperties: false
       }
-    },
-    required: ['summary', 'tasks']
-  }
+    }
+  },
+  required: ['room_guess', 'summary', 'tasks'],
+  additionalProperties: false
 };
-const PROGRESS_TOOL = {
-  name: 'progress_check',
-  description: 'Report which open chores are clearly finished in the AFTER photo.',
-  input_schema: {
-    type: 'object',
-    properties: {
-      done: { type: 'array', items: { type: 'string' }, description: 'IDs of chores that are clearly finished.' },
-      blocked: { type: 'array', items: { type: 'string' }, description: 'IDs of chores whose area is hidden or out of frame.' },
-      feedback: { type: 'string', description: 'One upbeat line, max 14 words. Name what was finished, or nudge toward an easy remaining chore.' }
-    },
-    required: ['done', 'feedback']
-  }
+const PROGRESS_SCHEMA = {
+  type: 'object',
+  properties: {
+    done: { type: 'array', items: { type: 'string' }, description: 'IDs of chores that are clearly finished.' },
+    blocked: { type: 'array', items: { type: 'string' }, description: 'IDs of chores whose area is hidden or out of frame.' },
+    feedback: { type: 'string', description: 'One upbeat line, max 14 words. Name what was finished, or nudge toward an easy remaining chore.' }
+  },
+  required: ['done', 'blocked', 'feedback'],
+  additionalProperties: false
 };
 
 export default {
@@ -119,14 +115,14 @@ async function analyze(body, env) {
   const j = await askClaude(env, env.MODEL_ANALYZE || 'claude-sonnet-5-5', ANALYZE_SYSTEM, [
     imageBlock(body.image),
     { type: 'text', text: `This is the ${room}. Make the chore list.` }
-  ], CHORE_TOOL, 4000);
+  ], CHORE_SCHEMA, 4000);
   const tasks = (Array.isArray(j.tasks) ? j.tasks : []).slice(0, 15).map((t) => ({
     title: String(t.title || '').trim().slice(0, 90),
     detail: String(t.detail || '').trim().slice(0, 120),
-    zone: ZONES.includes(t.zone) ? t.zone : 'center',
+    zone: pickEnum(t.zone, ZONES, 'center'),
     points: clampNum(t.points, 1, 25, 4),
     minutes: clampNum(t.minutes, 1, 90, 2),
-    category: CATEGORIES.includes(t.category) ? t.category : 'other'
+    category: pickEnum(t.category, CATEGORIES, 'other')
   })).filter((t) => t.title);
   return { room_guess: String(j.room_guess || '').slice(0, 40), summary: String(j.summary || '').slice(0, 200), tasks };
 }
@@ -141,7 +137,7 @@ async function verify(body, env) {
   if (isB64(body.before)) content.push({ type: 'text', text: 'BEFORE photo:' }, imageBlock(body.before));
   content.push({ type: 'text', text: 'AFTER photo:' }, imageBlock(body.after));
   content.push({ type: 'text', text: `Open chores:\n${JSON.stringify(tasks)}` });
-  const j = await askClaude(env, env.MODEL_VERIFY || 'claude-haiku-5-5', VERIFY_SYSTEM, content, PROGRESS_TOOL, 1000);
+  const j = await askClaude(env, env.MODEL_VERIFY || 'claude-haiku-5-5', VERIFY_SYSTEM, content, PROGRESS_SCHEMA, 1500);
   const ids = new Set(tasks.map((t) => t.id));
   return {
     done: (Array.isArray(j.done) ? j.done : []).map(String).filter((id) => ids.has(id)),
@@ -150,7 +146,7 @@ async function verify(body, env) {
   };
 }
 
-async function askClaude(env, model, system, content, tool, maxTokens) {
+async function askClaude(env, model, system, content, schema, maxTokens) {
   const res = await fetch('https://api.anthropic.com/v1/messages', {
     method: 'POST',
     headers: {
@@ -160,7 +156,7 @@ async function askClaude(env, model, system, content, tool, maxTokens) {
     },
     body: JSON.stringify({
       model, max_tokens: maxTokens, system,
-      tools: [tool], tool_choice: { type: 'tool', name: tool.name },
+      output_config: { format: { type: 'json_schema', schema } },
       messages: [{ role: 'user', content }]
     })
   });
@@ -169,17 +165,16 @@ async function askClaude(env, model, system, content, tool, maxTokens) {
     const msg = data && data.error && data.error.message ? data.error.message : `status ${res.status}`;
     throw new Error(`Claude API error: ${msg}`);
   }
-  const blocks = data.content || [];
-  const call = blocks.find((b) => b.type === 'tool_use' && b.input && typeof b.input === 'object');
-  if (call) return call.input;
-  // Fallback: the answer came back as text. Try to pull JSON out of it.
-  const text = blocks.filter((b) => b.type === 'text').map((b) => b.text).join('');
+  if (data.stop_reason === 'refusal') throw new Error('The AI declined to look at that photo. Try a different shot of the room.');
+  if (data.stop_reason === 'max_tokens') throw new Error('The AI answer was cut off. Try again.');
+  const text = (data.content || []).filter((b) => b.type === 'text').map((b) => b.text).join('');
   try { return parseJSON(text); } catch (e) {
     console.log('Unparseable answer', { stop_reason: data.stop_reason, text: text.slice(0, 500) });
     throw e;
   }
 }
 
+function pickEnum(v, list, dflt) { const x = String(v || '').toLowerCase().trim(); return list.find((o) => o === x) || dflt; }
 function badRequest(msg) { const e = new Error(msg); e.status = 400; return e; }
 function imageBlock(b64) {
   return { type: 'image', source: { type: 'base64', media_type: 'image/jpeg', data: b64 } };
