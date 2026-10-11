@@ -40,6 +40,19 @@ The API key can't live inside the app, or anyone could pull it out of the page. 
 
 Room scans use Claude Sonnet for accuracy. Coach Mode checks use Claude Haiku because they run often. You can change either with the `MODEL_ANALYZE` and `MODEL_VERIFY` variables. To make fewer Coach Mode checks, raise "Wait at least N seconds between checks" in Settings.
 
+## 4. Give Fluff a natural voice (optional, ElevenLabs)
+
+1. Make an account at elevenlabs.io and create an API key in your profile's API Keys page.
+2. In the Worker's **Settings > Variables and Secrets**, add `ELEVENLABS_API_KEY` as a **Secret**.
+3. In the app, open Settings, turn on "Fluff talks out loud", and pick a voice under **AI voices**. Play sample uses ElevenLabs' free preview clip, so it doesn't spend credits.
+
+Want a voice that's truly Fluff's? Use ElevenLabs' voice design tool, save the voice to your account, and it appears in the app's list (designed voices are picked by default).
+
+- The helper uses the fast, low-cost `eleven_flash_v2_5` model. Set an `ELEVENLABS_MODEL` variable (for example `eleven_v4_turbo`) for a more expressive one.
+- Every line Fluff says is saved on the phone, so repeated lines only cost credits once.
+- If credits run out or the voice service is unreachable, Fluff falls back to the phone's voice.
+- Like all app audio, Fluff is muted when the iPhone's ring/silent switch is set to silent.
+
 ## How Coach Mode decides when to check
 
 The phone compares tiny 48×36 snapshots of the camera feed five times a second, entirely on the device. When it sees movement, then stillness for about 2.5 seconds, and enough time has passed since the last check, it sends one photo to the helper along with the before photo and the open chores. Claude replies with which chores are clearly done. Anything blocked or out of view stays open, and you can always tap a chore to mark it done yourself.

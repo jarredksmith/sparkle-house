@@ -1,6 +1,6 @@
 // Sparkle House service worker: keeps the app shell available offline.
 // Bump VERSION whenever you change index.html so phones pick up the update.
-const VERSION = 'sparkle-v2';
+const VERSION = 'sparkle-v3';
 const SHELL = [
   './',
   './index.html',
@@ -18,7 +18,8 @@ self.addEventListener('install', (event) => {
 self.addEventListener('activate', (event) => {
   event.waitUntil(
     caches.keys().then((keys) =>
-      Promise.all(keys.filter((k) => k !== VERSION).map((k) => caches.delete(k)))
+      // Only clear old app-shell caches; saved voice lines (sparkle-voice-*) are kept.
+      Promise.all(keys.filter((k) => /^sparkle-v\d/.test(k) && k !== VERSION && k !== VERSION + '-fonts').map((k) => caches.delete(k)))
     )
   );
   self.clients.claim();

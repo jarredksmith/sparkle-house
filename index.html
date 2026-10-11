@@ -410,7 +410,7 @@ function voiceLabel(v) {
   return `${v.name.replace(/\s*\((premium|enhanced)\)/i, '')}${q === 3 ? ' (Premium)' : q === 2 ? ' (Enhanced)' : ''}, ${v.lang}`;
 }
 if (hasSpeech) { speechSynthesis.getVoices(); speechSynthesis.addEventListener('voiceschanged', () => speechSynthesis.getVoices()); }
-function say(text, voiceId) {
+function sayOnPhone(text, voiceId) {
   if (!hasSpeech || !text) return;
   try {
     speechSynthesis.cancel();
@@ -420,6 +420,65 @@ function say(text, voiceId) {
     u.rate = 1.0; u.pitch = 1.05;
     speechSynthesis.speak(u);
   } catch (e) { /* ignore */ }
+}
+
+/* AI voices (ElevenLabs, through the helper). Voice ids saved as "el:<id>";
+   anything else is a voice on this phone. Lines are cached on the phone so
+   repeated ones never cost credits twice. */
+const AI = { voices: [], loaded: false, failedNote: false, source: null, token: 0 };
+async function loadAiVoices() {
+  if (!api.live) { AI.voices = []; AI.loaded = true; return; }
+  try { AI.voices = (await api.voices()).voices || []; } catch (e) { AI.voices = []; }
+  AI.loaded = true;
+}
+function currentVoiceId() {
+  const id = S.settings.voiceId || '';
+  if (id.startsWith('el:')) return AI.voices.some((v) => 'el:' + v.id === id) || !AI.loaded ? id : defaultVoiceId();
+  return id || defaultVoiceId();
+}
+function defaultVoiceId() {
+  const mine = AI.voices.find((v) => v.category && v.category !== 'premade') || AI.voices[0];
+  if (mine) return 'el:' + mine.id;
+  const v = pickVoice(''); return v ? v.voiceURI : '';
+}
+function cleanForSpeech(t) { return String(t).replace(/[\u2726\u2728]/g, '').replace(/\s+/g, ' ').trim(); }
+async function voiceCacheKey(voice, text) {
+  const data = new TextEncoder().encode(voice + '|' + text);
+  const hash = await crypto.subtle.digest('SHA-256', data);
+  return 'voice-cache/' + [...new Uint8Array(hash)].slice(0, 12).map((b) => b.toString(16).padStart(2, '0')).join('') + '.mp3';
+}
+async function aiAudio(voice, text) {
+  let key = null, cache = null;
+  try { if ('caches' in window && crypto.subtle) { cache = await caches.open('sparkle-voice-v1'); key = await voiceCacheKey(voice, text); const hit = await cache.match(key); if (hit) return hit.arrayBuffer(); } } catch (e) { cache = null; }
+  const buf = await api.speak(text, voice);
+  if (cache && key) { try { await cache.put(key, new Response(buf.slice(0), { headers: { 'Content-Type': 'audio/mpeg' } })); } catch (e) { /* storage full */ } }
+  return buf;
+}
+async function playBuffer(buf, my) {
+  if (!actx) unlockAudio();
+  if (!actx) throw new Error('no audio');
+  const audio = await actx.decodeAudioData(buf.slice(0));
+  if (my !== AI.token) return;
+  if (AI.source) { try { AI.source.stop(); } catch (e) { /* already stopped */ } }
+  const src = actx.createBufferSource();
+  src.buffer = audio; src.connect(actx.destination); src.start();
+  AI.source = src;
+}
+async function say(text, voiceId = currentVoiceId()) {
+  text = cleanForSpeech(text);
+  if (!text) return;
+  const my = ++AI.token;
+  if (AI.source) { try { AI.source.stop(); } catch (e) { /* ignore */ } }
+  if (hasSpeech) speechSynthesis.cancel();
+  if (voiceId && voiceId.startsWith('el:') && api.live) {
+    try { await playBuffer(await aiAudio(voiceId.slice(3), text), my); return; }
+    catch (e) {
+      if (!AI.failedNote) { AI.failedNote = true; toast((e.message || 'Fluff\'s AI voice isn\'t available') + ' Using the phone\'s voice instead.'); }
+      if (my !== AI.token) return;
+      voiceId = '';
+    }
+  }
+  sayOnPhone(text, voiceId && !voiceId.startsWith('el:') ? voiceId : '');
 }
 function speak(text) { if (S.settings.voice) say(text); }
 let typeToken = 0;
@@ -584,6 +643,21 @@ const api = {
       return { done: [], feedback: NOCHANGE_LINES[Math.floor(Math.random() * NOCHANGE_LINES.length)] };
     }
     return this.call('/verify', { before: beforeB64 || null, after: afterB64, tasks });
+  },
+  async speak(text, voice) {
+    const r = await fetch(this.base() + '/speak', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'X-App-Token': S.settings.token || '' },
+      body: JSON.stringify({ text, voice })
+    });
+    if (!r.ok) { const j = await r.json().catch(() => ({})); throw new Error(j.error || `Voice error ${r.status}.`); }
+    return r.arrayBuffer();
+  },
+  async voices() {
+    const r = await fetch(this.base() + '/voices', { headers: { 'X-App-Token': S.settings.token || '' } });
+    const j = await r.json().catch(() => ({}));
+    if (!r.ok) throw new Error(j.error || `Error ${r.status}`);
+    return j;
   },
   async health() {
     const r = await fetch(this.base() + '/health', { headers: { 'X-App-Token': S.settings.token || '' } });
@@ -761,18 +835,39 @@ function openSettings() {
     <label class="field"><span>Wait at least <span id="gapVal">${st.minGap}</span> seconds between checks</span><input id="sGap" type="range" min="10" max="60" step="5" value="${st.minGap}"></label>
     <label class="toggle">Sound when chores are done<input id="sSound" type="checkbox" ${st.sound ? 'checked' : ''}></label>
     <label class="toggle">Fluff talks out loud<input id="sVoice" type="checkbox" ${st.voice ? 'checked' : ''}></label>
-    ${hasSpeech ? `<label class="field">Fluff's voice<select id="sVoiceId">${(() => {
-      const list = englishVoices(); const cur = pickVoice();
-      return list.length ? list.map((v) => `<option value="${esc(v.voiceURI)}" ${cur && cur.voiceURI === v.voiceURI ? 'selected' : ''}>${esc(voiceLabel(v))}</option>`).join('') : '<option value="">Default voice</option>';
-    })()}</select><small>Premium and Enhanced voices sound most natural. Download them in your phone's Settings under Read &amp; Speak (or Spoken Content), then reopen this app.</small></label>
-    <button class="btn small" data-act="test-voice">Play sample</button>` : ''}
+    <label class="field">Fluff's voice<select id="sVoiceId">${voiceOptions()}</select><small id="voiceHint">${voiceHint()}</small></label>
+    <button class="btn small" data-act="test-voice">Play sample</button>
+    <audio id="previewAudio" preload="none"></audio>
     <h3>Rooms</h3>
     <ul class="plist">${S.rooms.map((r) => `<li><span style="font-size:24px">${esc(r.emoji)}</span><span style="flex:1">${esc(r.name)}</span><button class="btn text" data-act="del-room" data-id="${r.id}">Remove</button></li>`).join('')}</ul>
     <h3>Privacy</h3>
     <p style="font-weight:600;margin:0 0 12px">Photos go to your AI helper to be checked and aren't saved on this phone or the helper. Points and lists are stored only on this phone.</p>
     <button class="btn text" data-act="reset" style="color:#C2405E">Reset everything</button>
     <div class="row" style="margin-top:16px"><button class="btn primary" data-act="save-settings">Save settings</button></div>`,
-  (w) => { w.querySelector('#sGap').addEventListener('input', (e) => { w.querySelector('#gapVal').textContent = e.target.value; }); });
+  (w) => {
+    w.querySelector('#sGap').addEventListener('input', (e) => { w.querySelector('#gapVal').textContent = e.target.value; });
+    if (api.live) { AI.loaded = false; refreshVoiceField(); loadAiVoices().then(refreshVoiceField); }
+  });
+}
+function voiceOptions() {
+  const cur = currentVoiceId();
+  const ai = AI.voices.map((v) => `<option value="el:${esc(v.id)}" ${cur === 'el:' + v.id ? 'selected' : ''}>${esc(v.name)}${v.description ? ' (' + esc(v.description) + ')' : ''}</option>`).join('');
+  const phone = englishVoices().map((v) => `<option value="${esc(v.voiceURI)}" ${cur === v.voiceURI ? 'selected' : ''}>${esc(voiceLabel(v))}</option>`).join('');
+  return (ai ? `<optgroup label="AI voices">${ai}</optgroup>` : '') + (phone ? `<optgroup label="This phone">${phone}</optgroup>` : '') || '<option value="">Default voice</option>';
+}
+function voiceHint() {
+  if (!api.live) return 'Connect your AI helper to use natural AI voices.';
+  if (!AI.loaded) return 'Loading AI voices…';
+  if (!AI.voices.length) return 'No AI voices yet. Add ELEVENLABS_API_KEY to your helper to unlock them.';
+  return 'AI voices sound the most natural. Voices you design on ElevenLabs show up here too.';
+}
+function refreshVoiceField() {
+  const sel = $('#sVoiceId'), hint = $('#voiceHint');
+  if (!sel) return;
+  const keep = sel.value;
+  sel.innerHTML = voiceOptions();
+  if (keep && [...sel.options].some((o) => o.value === keep)) sel.value = keep;
+  if (hint) hint.textContent = voiceHint();
 }
 function openAddRoom() {
   let pick = ROOM_EMOJI[0];
@@ -1115,10 +1210,18 @@ document.addEventListener('click', (e) => {
       S.settings.sound = $('#sSound').checked;
       S.settings.voice = $('#sVoice').checked;
       if ($('#sVoiceId')) S.settings.voiceId = $('#sVoiceId').value;
-      save(); closeSheet(); toast('Settings saved'); render();
+      AI.failedNote = false;
+      save(); closeSheet(); toast('Settings saved'); render(); loadAiVoices();
       break;
     }
-    case 'test-voice': say('Hi! I\'m Fluff. Let\'s make this room sparkle!', $('#sVoiceId') ? $('#sVoiceId').value : ''); break;
+    case 'test-voice': {
+      unlockAudio();
+      const id = $('#sVoiceId') ? $('#sVoiceId').value : '';
+      const ai = id.startsWith('el:') && AI.voices.find((v) => 'el:' + v.id === id);
+      if (ai && ai.preview) { const a = $('#previewAudio'); a.src = ai.preview; a.play().catch(() => say('Hi! I\'m Fluff. Let\'s make this room sparkle!', id)); }
+      else say('Hi! I\'m Fluff. Let\'s make this room sparkle!', id);
+      break;
+    }
     case 'add-room': openAddRoom(); break;
     case 'save-room': {
       const name = $('#rName').value.trim();
@@ -1153,6 +1256,7 @@ document.addEventListener('keydown', (e) => {
 });
 
 render();
+loadAiVoices();
 if ('serviceWorker' in navigator && (location.protocol === 'https:' || location.hostname === 'localhost')) {
   navigator.serviceWorker.register('sw.js').catch(() => {});
 }

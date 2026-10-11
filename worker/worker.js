@@ -7,6 +7,8 @@
 //   ALLOWED_ORIGINS    (variable, optional) e.g. "https://yourname.github.io"
 //   MODEL_ANALYZE      (variable, optional) default claude-sonnet-5-5
 //   MODEL_VERIFY       (variable, optional) default claude-haiku-5-5
+//   ELEVENLABS_API_KEY (secret, optional)  turns on Fluff's AI voice
+//   ELEVENLABS_MODEL   (variable, optional) default eleven_flash_v2_5
 //
 // Photos are passed straight through to the API and never stored here.
 
@@ -90,7 +92,11 @@ export default {
     }
     if (!env.ANTHROPIC_API_KEY) return reply({ error: 'The helper is missing its ANTHROPIC_API_KEY secret.' }, 500);
 
-    if (url.pathname === '/health') return reply({ ok: true });
+    if (url.pathname === '/health') return reply({ ok: true, voice: !!env.ELEVENLABS_API_KEY });
+    if (url.pathname === '/voices') {
+      try { return reply(await listVoices(env)); }
+      catch (err) { return reply({ error: err.message }, err.status || 502); }
+    }
     if (request.method !== 'POST') return reply({ error: 'Not found' }, 404);
 
     const len = Number(request.headers.get('Content-Length') || 0);
@@ -98,6 +104,13 @@ export default {
 
     let body;
     try { body = await request.json(); } catch { return reply({ error: 'Bad request.' }, 400); }
+
+    if (url.pathname === '/speak') {
+      try {
+        const audio = await speak(body, env);
+        return new Response(audio, { headers: { ...cors, 'Content-Type': 'audio/mpeg', 'Cache-Control': 'no-store' } });
+      } catch (err) { return reply({ error: err.message }, err.status || 502); }
+    }
 
     try {
       if (url.pathname === '/analyze') return reply(await analyze(body, env));
@@ -145,6 +158,48 @@ async function verify(body, env) {
     feedback: String(j.feedback || '').slice(0, 140)
   };
 }
+
+/* ---------- Fluff's voice (ElevenLabs) ---------- */
+async function speak(body, env) {
+  if (!env.ELEVENLABS_API_KEY) throw httpError('Fluff\'s AI voice isn\'t set up on the helper.', 501);
+  const text = String(body.text || '').replace(/[\u2726\u2728]/g, '').trim().slice(0, 300);
+  const voice = String(body.voice || '').replace(/[^A-Za-z0-9]/g, '');
+  if (!text) throw badRequest('Nothing to say.');
+  if (!voice) throw badRequest('No voice chosen.');
+  const res = await fetch(`https://api.elevenlabs.io/v1/text-to-speech/${voice}?output_format=mp3_44100_64`, {
+    method: 'POST',
+    headers: { 'xi-api-key': env.ELEVENLABS_API_KEY, 'Content-Type': 'application/json', Accept: 'audio/mpeg' },
+    body: JSON.stringify({ text, model_id: env.ELEVENLABS_MODEL || 'eleven_flash_v2_5' })
+  });
+  if (!res.ok) throw httpError(await elevenError(res), res.status === 401 || res.status === 402 || res.status === 429 ? res.status : 502);
+  return res.body;
+}
+async function listVoices(env) {
+  if (!env.ELEVENLABS_API_KEY) return { voices: [] };
+  const res = await fetch('https://api.elevenlabs.io/v2/voices?page_size=100&include_total_count=false', {
+    headers: { 'xi-api-key': env.ELEVENLABS_API_KEY }
+  });
+  if (!res.ok) throw httpError(await elevenError(res), 502);
+  const data = await res.json();
+  return {
+    voices: (data.voices || []).map((v) => ({
+      id: v.voice_id,
+      name: v.name,
+      category: v.category,
+      description: [v.labels && v.labels.gender, v.labels && v.labels.age, v.labels && v.labels.accent, v.labels && (v.labels.descriptive || v.labels.description)].filter(Boolean).join(', '),
+      preview: v.preview_url || ''
+    }))
+  };
+}
+async function elevenError(res) {
+  const data = await res.json().catch(() => ({}));
+  const d = data && data.detail;
+  const msg = typeof d === 'string' ? d : (d && (d.message || d.status)) || `status ${res.status}`;
+  if (/quota|credit/i.test(msg)) return 'Fluff is out of ElevenLabs voice credits for now.';
+  if (res.status === 401) return 'ElevenLabs rejected the API key. Check ELEVENLABS_API_KEY.';
+  return `ElevenLabs error: ${msg}`;
+}
+function httpError(msg, status) { const e = new Error(msg); e.status = status; return e; }
 
 async function askClaude(env, model, system, content, schema, maxTokens) {
   const res = await fetch('https://api.anthropic.com/v1/messages', {
