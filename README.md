@@ -107,7 +107,7 @@ GitHub builds it on a Mac every time `index.html`, `icons/` or `ios-app/` change
 2. In App Store Connect, go to **Users and Access > Integrations > App Store Connect API**, create a **Team Key** with **Admin** access (Admin lets Xcode manage the signing certificates for you), and download the `.p8` file. Apple only lets you download it once.
 3. In this GitHub repo, go to **Settings > Secrets and variables > Actions** and add:
    - Secrets: `ASC_KEY_ID` (the key's ID), `ASC_ISSUER_ID` (shown above the keys list), `ASC_KEY_P8` (open the .p8 file in a text editor and paste all of it)
-   - Variable: `APPLE_TEAM_ID` (your 10-character Team ID from the Apple Developer membership page)
+   - The Apple Team ID is already set in `ios.yml`. To use a different team, add a repo variable `APPLE_TEAM_ID`.
 4. In GitHub, open **Actions > iPhone app > Run workflow**. When it finishes, the build appears in TestFlight after Apple processes it.
 5. In App Store Connect, open the app's **TestFlight** tab and add family members as testers. They install the TestFlight app, then Sparkle House.
 

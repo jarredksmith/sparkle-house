@@ -3,8 +3,8 @@
 # Until the App Store Connect key is set up, this only checks that the app compiles
 # (for the iPhone simulator). Once these exist in the repo settings, every run is
 # signed and uploaded to TestFlight:
-#   Secrets:   ASC_KEY_ID, ASC_ISSUER_ID, ASC_KEY_P8 (the full text of the .p8 file)
-#   Variables: APPLE_TEAM_ID
+#   Secrets: ASC_KEY_ID, ASC_ISSUER_ID, ASC_KEY_P8 (the full text of the .p8 file)
+# The Apple Team ID isn't secret, so it's set below (APPLE_TEAM_ID).
 # Signing is automatic: Xcode creates and stores the certificates in your Apple account
 # (cloud-managed signing), so no certificate files live in GitHub.
 name: iPhone app
@@ -28,8 +28,9 @@ jobs:
     runs-on: macos-26
     timeout-minutes: 45
     env:
-      SIGNING: ${{ secrets.ASC_KEY_P8 != '' && secrets.ASC_KEY_ID != '' && secrets.ASC_ISSUER_ID != '' && vars.APPLE_TEAM_ID != '' }}
+      SIGNING: ${{ secrets.ASC_KEY_P8 != '' && secrets.ASC_KEY_ID != '' && secrets.ASC_ISSUER_ID != '' }}
       PROJECT: ios-app/ios/App/App.xcodeproj
+      TEAM: ${{ vars.APPLE_TEAM_ID || 'SVYYTM3LTN' }}
     steps:
       - uses: actions/checkout@v4
 
@@ -73,8 +74,6 @@ jobs:
 
       - name: Build for the App Store
         if: env.SIGNING == 'true'
-        env:
-          TEAM: ${{ vars.APPLE_TEAM_ID }}
         run: |
           set -o pipefail
           xcodebuild -project "$PROJECT" -scheme App -configuration Release \
@@ -85,7 +84,6 @@ jobs:
       - name: Sign and upload to TestFlight
         if: env.SIGNING == 'true'
         env:
-          TEAM: ${{ vars.APPLE_TEAM_ID }}
           ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
           ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
         run: |
