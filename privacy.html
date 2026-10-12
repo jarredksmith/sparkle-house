@@ -1,0 +1,47 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Sparkle House Privacy</title>
+<style>
+  :root { --ink:#2D3B36; --soft:#5D6D66; --meadow:#E6F5EA; --leaf:#2F6B4F; }
+  body { margin:0; background:var(--meadow); color:var(--ink); font:17px/1.55 ui-rounded, system-ui, -apple-system, sans-serif; }
+  main { max-width:680px; margin:0 auto; padding:32px 16px 48px; }
+  h1 { font-size:30px; margin:0 0 4px; }
+  h2 { font-size:20px; margin:28px 0 6px; }
+  p, li { margin:0 0 10px; }
+  .date { color:var(--soft); margin-bottom:24px; }
+  a { color:var(--leaf); }
+</style>
+</head>
+<body>
+<main>
+  <h1>Sparkle House privacy</h1>
+  <p class="date">Last updated October 12, 2026</p>
+
+  <p>Sparkle House is a family chores app. It has no ads, no tracking and no accounts. This page explains what the app does with your information.</p>
+
+  <h2>Photos and the camera</h2>
+  <p>When you scan a room, use Coach Mode or ask Fluff a question, the app sends a photo of the room to your household's own AI helper (a small server the household sets up on Cloudflare). The helper passes it to Anthropic's Claude AI to make the chore list or check what's done, then discards it. Neither the app nor the helper saves your photos. Before anything goes to the AI, you can draw a focus area so the rest of the picture is grayed out.</p>
+
+  <h2>Fluff's voice and your questions</h2>
+  <p>If you turn on Fluff's voice, the words Fluff says are sent to ElevenLabs to turn them into speech, and the audio is saved on your phone so it isn't requested twice. If you ask Fluff a question out loud, your iPhone's speech recognition turns it into text first.</p>
+
+  <h2>Chores, points and people</h2>
+  <p>Rooms, chore lists, first names, sparkles and the streak are stored on your phone. If your household turns on household sync, they're also stored in your household's own Cloudflare database so every phone in the house sees the same lists. Photos are never synced.</p>
+
+  <h2>Reminders</h2>
+  <p>In the iPhone app, reminders are scheduled on your phone. In the web version, the household helper stores a small summary to word reminders (first name, streak, open chore count, the room needing attention and weekly totals) along with the address your browser gives it for notifications.</p>
+
+  <h2>Sharing</h2>
+  <p>Information is only sent to the services above to make the app work. It isn't sold or used for advertising.</p>
+
+  <h2>Removing your information</h2>
+  <p>Settings, then Privacy, then "Reset everything on this phone" clears the app's data on your phone. Deleting the app does the same. The household's synced data can be removed by whoever set up the household's Cloudflare account.</p>
+
+  <h2>Questions</h2>
+  <p>Email <a href="mailto:jarredksmith@gmail.com">jarredksmith@gmail.com</a>.</p>
+</main>
+</body>
+</html>
