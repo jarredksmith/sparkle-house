@@ -101,6 +101,8 @@ Every phone connected to the same helper can share one household: rooms, chore l
 
 The `ios-app` folder wraps this same web app in a native iPhone app using Capacitor. The app bundles `index.html`, so there's still only one copy of the app to edit. Inside the app, Fluff talks even when the silent switch is on, the screen stays awake in Coach Mode, chores buzz when you finish them, and Ask Fluff uses Apple's speech recognition.
 
+Reminders in the app don't need the helper or KV at all: the phone plans the next two weeks of reminders (daily nudge, streak saver, Sunday recap, flash bonuses) and iOS delivers them, with Fluff's chime and the open-chore count on the app icon. The plan is redone whenever a chore is done, the household syncs or a setting changes. One limit: if someone else finishes a chore on another phone, this phone finds out the next time the app is opened.
+
 GitHub builds it on a Mac every time `index.html`, `icons/` or `ios-app/` changes (see `.github/workflows/ios.yml`). Until the keys below are added, a build only checks that the app compiles. Once they're added, every build is signed and sent to TestFlight.
 
 1. In App Store Connect, create the app with bundle ID `com.jarredsmith.sparklehouse`.
@@ -111,7 +113,7 @@ GitHub builds it on a Mac every time `index.html`, `icons/` or `ios-app/` change
 4. In GitHub, open **Actions > iPhone app > Run workflow**. When it finishes, the build appears in TestFlight after Apple processes it.
 5. In App Store Connect, open the app's **TestFlight** tab and add family members as testers. They install the TestFlight app, then Sparkle House.
 
-The helper's `ALLOWED_ORIGINS` must include `capacitor://localhost` so the app can reach it. Reminders don't work in the iPhone app yet; the Home Screen version still sends them.
+The helper's `ALLOWED_ORIGINS` must include `capacitor://localhost` so the app can reach it.
 
 ## Privacy
 
@@ -126,4 +128,4 @@ After changing `index.html`, open `sw.js` and bump `VERSION` (for example `spark
 ## Next up
 
 - The 3D house: unlocked decor already tracks toward it.
-- Reminders in the iPhone app.
+- A Home Screen widget for the iPhone app.

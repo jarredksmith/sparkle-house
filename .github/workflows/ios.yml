@@ -16,6 +16,7 @@ on:
     paths:
       - index.html
       - icons/**
+      - sounds/**
       - ios-app/**
       - .github/workflows/ios.yml
 

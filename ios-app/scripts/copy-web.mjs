@@ -11,4 +11,5 @@ rmSync(out, { recursive: true, force: true });
 mkdirSync(out, { recursive: true });
 for (const f of ['index.html', 'manifest.webmanifest']) cpSync(join(root, f), join(out, f));
 cpSync(join(root, 'icons'), join(out, 'icons'), { recursive: true });
+cpSync(join(root, 'sounds', 'fluff-chime.wav'), join(out, 'fluff-chime.wav')); // notification sound
 console.log('Copied the web app into', out);

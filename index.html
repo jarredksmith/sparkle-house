@@ -338,6 +338,8 @@ const reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)').match
    inside the app, a few things use native plugins instead of web APIs. */
 const NATIVE = !!(window.Capacitor && window.Capacitor.isNativePlatform && window.Capacitor.isNativePlatform());
 const NP = NATIVE ? (window.Capacitor.Plugins || {}) : {};
+const LN = NP.LocalNotifications; // on-device reminders (see planReminders)
+let nativeTimer = null;
 function haptic(type) {
   try { if (NP.Haptics) (type ? NP.Haptics.notification({ type }) : NP.Haptics.impact({ style: 'LIGHT' })).catch(() => {}); } catch (e) { /* ignore */ }
 }
@@ -1020,7 +1022,7 @@ function settingsMeta(key) {
     case 'fluff': return `${PERSONAS[personaId()].name} · ${val('#sVoice', st.voice) ? 'talks out loud' : 'voice off'}`;
     case 'coach': { const pep = val('#sPep', st.pep); return `${pep === 'off' ? 'No pep talk' : pep === 'chatty' ? 'Chatty pep talk' : 'Light pep talk'} · checks every ${val('#sGap', st.minGap)} sec`; }
     case 'house': return `${SY.on ? (SY.error ? 'Sync problem' : 'Synced') : 'Not synced'} · ${S.players.length === 1 ? '1 person' : S.players.length + ' people'} · ${plural(S.rooms.length, 'room')}`;
-    case 'remind': return NATIVE ? 'Coming soon to the app' : S.notify.on ? 'On' : 'Off';
+    case 'remind': return S.notify.on ? 'On' : 'Off';
     case 'helper': return String(val('#sUrl', st.workerUrl)).trim() ? 'Set up' : 'Demo mode, not connected';
     case 'privacy': return 'Photos are never saved';
     default: return '';
@@ -1445,11 +1447,14 @@ function prefetchPushKey() {
 }
 function notifyHTML() {
   const n = S.notify;
-  if (NATIVE) return '<p style="font-weight:600;margin:0">Reminders are coming to the iPhone app in the next update. Until then, the Home Screen version of Sparkle House can still send them.</p>';
-  if (!pushSupported() || (isIOS && !isStandalone())) return '<p class="field" style="font-weight:600">To get reminders on iPhone, add Sparkle House to your Home Screen (Share, then Add to Home Screen) and open it from there. Needs iOS 16.4 or later.</p>';
-  if (!api.live) return '<p style="font-weight:600;margin:0">Connect your AI helper (in AI helper below) to turn on reminders.</p>';
-  if (mem.pushKeyError && !n.on) return `<div class="status bad">${esc(mem.pushKeyError)}</div>`;
-  if (Notification.permission === 'denied') return '<p style="font-weight:600;margin:0">Notifications are blocked for Sparkle House. Turn them on in your phone\'s Settings, under Notifications, then come back here.</p>';
+  if (NATIVE && !LN) return '<p style="font-weight:600;margin:0">Update the app from TestFlight to turn on reminders.</p>';
+  if (NATIVE && mem.nativePerm === 'denied') return '<p style="font-weight:600;margin:0">Notifications are blocked for Sparkle House. Turn them on in iPhone Settings, under Notifications, then come back here.</p>';
+  if (!NATIVE) { // the web version needs the helper to send pushes; the iPhone app schedules reminders itself
+    if (!pushSupported() || (isIOS && !isStandalone())) return '<p class="field" style="font-weight:600">To get reminders on iPhone, add Sparkle House to your Home Screen (Share, then Add to Home Screen) and open it from there. Needs iOS 16.4 or later.</p>';
+    if (!api.live) return '<p style="font-weight:600;margin:0">Connect your AI helper (in AI helper below) to turn on reminders.</p>';
+    if (mem.pushKeyError && !n.on) return `<div class="status bad">${esc(mem.pushKeyError)}</div>`;
+  }
+  if (!NATIVE && Notification.permission === 'denied') return '<p style="font-weight:600;margin:0">Notifications are blocked for Sparkle House. Turn them on in your phone\'s Settings, under Notifications, then come back here.</p>';
   if (!n.on) return `<p style="font-weight:600;margin:0 0 10px">Fluff can nudge you to clean, save your streak, and surprise you with double-sparkle bonuses.</p>
     <button class="btn primary" data-act="notify-on" style="width:100%">Turn on reminders</button>`;
   const tog = (id, on, label, hint) => `<label class="toggle"><span>${label}${hint ? `<br><small style="font-weight:600;color:var(--ink-soft)">${hint}</small>` : ''}</span><input id="${id}" type="checkbox" ${on ? 'checked' : ''}></label>`;
@@ -1486,6 +1491,16 @@ function pushSummary() {
   };
 }
 async function enableReminders() {
+  if (NATIVE) {
+    try {
+      const perm = await LN.requestPermissions();
+      mem.nativePerm = perm.display;
+      if (perm.display !== 'granted') { toast('Reminders need notification permission.'); refreshNotifyBox(); return; }
+      S.notify.on = true; save(); updateBadge(); scheduleNativeReminders(true);
+      refreshNotifyBox(); toast('Reminders are on!', 'win');
+    } catch (e) { toast('Couldn\'t turn on reminders. Try again.'); refreshNotifyBox(); }
+    return;
+  }
   try {
     if (!mem.vapidKey) mem.vapidKey = (await api.pushKey()).key;
     const perm = await Notification.requestPermission();
@@ -1505,6 +1520,11 @@ async function enableReminders() {
   } catch (e) { toast(e.message || 'Couldn\'t turn on reminders. Try again.'); refreshNotifyBox(); }
 }
 async function disableReminders() {
+  if (NATIVE) {
+    S.notify.on = false; save(); scheduleNativeReminders(true); refreshNotifyBox(); toast('Reminders are off');
+    if (NP.Badge) NP.Badge.clear().catch(() => {});
+    return;
+  }
   try {
     const reg = await navigator.serviceWorker.ready;
     const sub = await reg.pushManager.getSubscription();
@@ -1515,6 +1535,7 @@ async function disableReminders() {
   if ('clearAppBadge' in navigator) navigator.clearAppBadge().catch(() => {});
 }
 function pushPrefs() {
+  if (NATIVE) { scheduleNativeReminders(); return; }
   if (!S.notify.on || !S.deviceId || !api.live) return;
   api.push('/push/update', { id: S.deviceId, tz: localTz(), prefs: notifyPrefs() }).catch((e) => { if (/aren't set up/.test(e.message)) resubscribe(); });
 }
@@ -1541,11 +1562,165 @@ function syncReminderState(now = false) {
   }, now ? 0 : 20000);
 }
 function updateBadge() {
+  if (NATIVE) {
+    if (!NP.Badge || !S.notify.on) return;
+    const c = openChoreCount();
+    (c ? NP.Badge.set({ count: c }) : NP.Badge.clear()).catch(() => {});
+    return;
+  }
   if (!('setAppBadge' in navigator) || !S.notify.on) return;
   const n = Object.values(S.sessions).reduce((a, s) => a + s.tasks.filter((t) => !t.done).length, 0);
   (n ? navigator.setAppBadge(n) : navigator.clearAppBadge()).catch(() => {});
 }
-function afterSave() { updateBadge(); syncReminderState(); scheduleSync(); }
+/* ---------- iPhone app: reminders scheduled on the phone itself ----------
+   The app plans the next two weeks of reminders and hands them to iOS, which shows them
+   at the right time even when the app is closed. The plan is redone whenever anything
+   changes (a chore, a sync, a setting), so it stays current. Same wording as the helper's
+   web push reminders, so each Fluff personality sounds the same either way. */
+const REMIND_COPY = {
+  sunny: {
+    streakT: ['Your {n}-day streak ends at midnight!', 'Don\'t break the chain{name}!'],
+    streakB: ['One quick chore keeps your {n} days going. Fluff believes in you!', 'Just one chore before bed saves your {n}-day streak.'],
+    listT: ['Your list is waiting', 'Ready for a quick win{name}?', 'Fluff saved your spot'],
+    listB: '{open} left in the {room}. Knock one out for a quick sparkle boost!{line}',
+    needyT: 'The {room} misses you', needyB: 'A quick tidy would make it sparkle again. Fluff\'s ready when you are!{line}',
+    anyT: ['Time for a quick sparkle?', 'Fluff\'s bored{name}!', 'Ten minutes, big sparkles'], anyB: 'Snap a messy room and Fluff will turn it into a game.{line}',
+    line: ' Keep your {n}-day streak going!', weekT: 'Your sparkle week', freshT: 'New week, fresh start',
+    flashT: 'Flash bonus! Double sparkles', flashB: 'Every chore you finish in the next 30 minutes earns double sparkles. Go go go!'
+  },
+  sarge: {
+    streakT: ['Recruit! Your {n}-day streak ends at midnight!', 'Streak in danger{name}!'],
+    streakB: ['One chore, recruit. That is all it takes to save {n} days. Move!', 'Do not let {n} days of hard work go to waste. One chore. Now!'],
+    listT: ['Mission still open, recruit', 'Report for duty{name}!', 'Back to the front lines'],
+    listB: '{open} left in the {room}. Get in there and finish the job, recruit!{line}',
+    needyT: 'The {room} needs backup', needyB: 'That room is a disaster zone, recruit. Deploy for ten minutes.{line}',
+    anyT: ['Drill time, recruit!', 'On your feet{name}!', 'Ten minutes. Go.'], anyB: 'Snap a room and I will give you your orders.{line}',
+    line: ' Protect that {n}-day streak!', weekT: 'Weekly debrief, recruit', freshT: 'New week, new mission',
+    flashT: 'Speed drill! Double sparkles', flashB: 'Every chore in the next 30 minutes counts double, recruit. Move, move, move!'
+  },
+  snooze: {
+    streakT: ['Your {n}-day streak ends at midnight. Just saying.', 'Psst{name}. The streak.'],
+    streakB: ['One chore saves {n} days of effort. I\'d do it for you, but I\'m napping.', 'Your {n}-day streak is about to nap forever. One chore wakes it up.'],
+    listT: ['Your list is still there', 'Hey{name}. The list.', 'I kept your spot warm'],
+    listB: '{open} left in the {room}. I checked. From bed.{line}',
+    needyT: 'The {room} looks how I feel', needyB: 'A quick tidy would fix it. I believe in you. Mostly.{line}',
+    anyT: ['Clean something? Maybe?', 'You up{name}?', 'Ten minutes. Then nap.'], anyB: 'Snap a messy room. I\'ll turn it into a game. Then sleep.{line}',
+    line: ' Also, your {n}-day streak. No pressure.', weekT: 'Your week, summarized sleepily', freshT: 'New week. Ugh. Fine.',
+    flashT: 'Double sparkles. Wow.', flashB: 'Chores in the next 30 minutes count double. Even I\'m tempted. Not really.'
+  },
+  captain: {
+    streakT: ['Arr! Yer {n}-day streak sinks at midnight!', 'Don\'t let her sink{name}!'],
+    streakB: ['One chore keeps yer {n}-day streak afloat, matey!', 'Swab one deck before bed and save {n} days of treasure!'],
+    listT: ['Treasure still be waitin\'', 'Ahoy{name}!', 'Back to the ship, matey'],
+    listB: '{open} left in the {room}. Plunder one for a fine sparkle bounty!{line}',
+    needyT: 'The {room} be a shipwreck', needyB: 'A quick swabbin\' would make her shine again, matey!{line}',
+    anyT: ['All hands on deck!', 'Ahoy{name}! Fancy a treasure hunt?', 'Hoist the mop!'], anyB: 'Snap a messy room and Fluff will map the treasure.{line}',
+    line: ' Keep yer {n}-day streak afloat!', weekT: 'Captain\'s weekly log', freshT: 'A fresh voyage begins',
+    flashT: 'Double treasure, matey!', flashB: 'Every chore in the next 30 minutes earns double sparkles. Hoist the sails!'
+  }
+};
+const RID = 7000; // this app's reminder ids: 7000-7099
+const FLASH_KEY = 'sparklehouse.flash';
+const fillCopy = (t, v) => String(t).replace(/\{(\w+)\}/g, (_, k) => (v[k] ?? ''));
+const pickOne = (arr) => (Array.isArray(arr) ? arr[Math.floor(Math.random() * arr.length)] : arr);
+const hmToMins = (t) => { const [h, m] = String(t || '0:0').split(':').map(Number); return (h || 0) * 60 + (m || 0); };
+function dayAt(now, dayOffset, mins) { const d = new Date(now); d.setHours(0, 0, 0, 0); d.setDate(d.getDate() + dayOffset); d.setMinutes(mins); return d.getTime(); }
+// Surprise flash bonuses: about twice a week between 4 and 7 PM, kept stable between replans.
+function flashPlan(now, avoid) {
+  let plan = [];
+  try { plan = JSON.parse(localStorage.getItem(FLASH_KEY) || '[]').filter((t) => t > now); } catch (e) { plan = []; }
+  for (let tries = 0; plan.length < 4 && tries < 40; tries++) {
+    const t = dayAt(now, 1 + Math.floor(Math.random() * 13), 16 * 60 + Math.floor(Math.random() * 180));
+    if (plan.some((p) => Math.abs(p - t) < 2 * 864e5) || avoid(t)) continue;
+    plan.push(t);
+  }
+  plan.sort((a, b) => a - b);
+  try { localStorage.setItem(FLASH_KEY, JSON.stringify(plan)); } catch (e) { /* ignore */ }
+  return plan;
+}
+// Works out what to send and when, for the next 14 days. Exposed for tests.
+function planReminders(now) {
+  const n = S.notify, copy = REMIND_COPY[personaId()] || REMIND_COPY.sunny, st = pushSummary();
+  const qs = hmToMins(n.quietStart), qe = hmToMins(n.quietEnd);
+  const quietAt = (t) => { const d = new Date(t), m = d.getHours() * 60 + d.getMinutes(); return qs !== qe && (qs < qe ? m >= qs && m < qe : m >= qs || m < qe); };
+  const today = isoDay(now), yesterday = isoDay(now - 864e5);
+  const doneToday = st.lastDone === today;
+  const v = { name: st.name ? `, ${st.name}` : '', n: st.streak, open: plural(st.open || 0, 'chore'), line: '' };
+  const items = [];
+  const add = (prio, at, title, body, url, kind) => { if (at > now + 60000 && !quietAt(at)) items.push({ prio, at, title, body, url, kind }); };
+  const streakT = (k) => [fillCopy(pickOne(copy.streakT), { ...v, n: k }), fillCopy(pickOne(copy.streakB), { ...v, n: k })];
+  const roomUrl = st.openRoomId ? `./?room=${st.openRoomId}` : './';
+  if (n.streak) {
+    if (!doneToday && st.lastDone === yesterday && st.streak >= 2) add(1, dayAt(now, 0, 19 * 60 + 30), ...streakT(st.streak), roomUrl, 'streak');
+    if (doneToday && st.streak >= 2) add(1, dayAt(now, 1, 19 * 60 + 30), ...streakT(st.streak), roomUrl, 'streak');
+  }
+  if (n.weekly) {
+    for (let d = 0; d < 14; d++) {
+      const t = dayAt(now, d, 18 * 60);
+      if (new Date(t).getDay() !== 0) continue;
+      const w = st.week || {};
+      if (d === 0 && w.chores) add(2, t, copy.weekT, `This week: ${plural(w.chores, 'chore')} and ${plural(w.sparkles, 'sparkle')}.${w.leader ? ` ${w.leader} led the house!` : ''} Ready for a fresh week?`, './', 'weekly');
+      else if (d === 0) add(2, t, copy.freshT, 'Snap one room tonight and Fluff will turn it into a game. A quick win starts a new streak!', './', 'weekly');
+      else add(2, t, copy.weekT, 'Open Sparkle House to see how the house did this week, then start a fresh one!', './', 'weekly');
+    }
+  }
+  if (n.daily) {
+    const mins = hmToMins(n.daily);
+    for (let d = doneToday ? 1 : 0; d < 14; d++) {
+      const alive = (d === 0 && st.lastDone === yesterday) || (d === 1 && doneToday);
+      const vv = { ...v, line: alive && st.streak >= 2 ? fillCopy(copy.line, v) : '' };
+      let title, body, url = './';
+      if (st.open && st.openRoom) { title = fillCopy(pickOne(copy.listT), vv); body = fillCopy(copy.listB, { ...vv, room: st.openRoom.toLowerCase() }); url = roomUrl; }
+      else if (st.needy) { title = fillCopy(copy.needyT, { ...vv, room: st.needy.toLowerCase() }); body = fillCopy(copy.needyB, vv); url = st.needyId ? `./?room=${st.needyId}` : './'; }
+      else { title = fillCopy(pickOne(copy.anyT), vv); body = fillCopy(copy.anyB, vv); }
+      add(3, dayAt(now, d, mins), title, body, url, 'daily');
+    }
+  }
+  if (n.flash) {
+    const taken = items.map((i) => i.at);
+    flashPlan(now, (t) => quietAt(t) || taken.some((x) => Math.abs(x - t) < 45 * 60000))
+      .forEach((t) => add(4, t, copy.flashT, copy.flashB, `./?flash=${t + 30 * 60000}`, 'flash'));
+  }
+  // Never two reminders within 45 minutes: keep the more important one.
+  const kept = [];
+  items.sort((a, b) => a.prio - b.prio || a.at - b.at).forEach((it) => { if (!kept.some((k) => Math.abs(k.at - it.at) < 45 * 60000)) kept.push(it); });
+  return kept.sort((a, b) => a.at - b.at).slice(0, 40);
+}
+function scheduleNativeReminders(now) { if (!LN) return; clearTimeout(nativeTimer); nativeTimer = setTimeout(nativeReschedule, now ? 0 : 1500); }
+async function nativeReschedule() {
+  try {
+    const pend = await LN.getPending();
+    const ours = (pend.notifications || []).map((x) => Number(x.id)).filter((id) => id >= RID && id < RID + 99).map((id) => ({ id }));
+    if (ours.length) await LN.cancel({ notifications: ours });
+    if (!S.notify.on) return;
+    const badge = openChoreCount();
+    const list = planReminders(Date.now());
+    if (list.length) {
+      await LN.schedule({ notifications: list.map((r, i) => ({
+        id: RID + i, title: r.title, body: r.body, sound: 'fluff-chime.wav', badge,
+        schedule: { at: new Date(r.at), allowWhileIdle: true }, extra: { url: r.url, kind: r.kind }
+      })) });
+    }
+  } catch (e) { console.warn('Sparkle House reminders:', e); }
+}
+async function nativeTestReminder() {
+  try {
+    await LN.schedule({ notifications: [{ id: RID + 99, title: 'Fluff here!', body: 'Reminders are working. I\'ll nudge you at the times you picked.', sound: 'fluff-chime.wav', schedule: { at: new Date(Date.now() + 4000) } }] });
+    toast('Test coming in a few seconds');
+  } catch (e) { toast('Couldn\'t send a test. Check notifications for Sparkle House in iPhone Settings.'); }
+}
+async function nativeNotifyPermission() {
+  try { mem.nativePerm = (await LN.checkPermissions()).display; } catch (e) { mem.nativePerm = 'prompt'; }
+  refreshNotifyBox();
+}
+if (LN) {
+  LN.addListener('localNotificationActionPerformed', (a) => {
+    const url = a && a.notification && a.notification.extra && a.notification.extra.url;
+    if (url) handleDeepLink(new URL(url, location.href).href);
+  });
+}
+function openChoreCount() { return Object.values(S.sessions).reduce((a, s) => a + s.tasks.filter((t) => !t.done).length, 0); }
+function afterSave() { updateBadge(); syncReminderState(); scheduleSync(); scheduleNativeReminders(); }
 document.addEventListener('visibilitychange', () => { if (document.hidden) syncReminderState(true); });
 
 /* Flash bonus: opened from a notification, double sparkles until the window ends. */
@@ -2478,6 +2653,7 @@ document.addEventListener('click', (e) => {
     case 'notify-off': disableReminders(); break;
     case 'notify-test': {
       if ($('#nDailyOn')) { readNotifyForm(); save(); pushPrefs(); }
+      if (NATIVE) { nativeTestReminder(); break; }
       api.push('/push/test', { id: S.deviceId }).then(() => toast('Test sent. It should arrive in a few seconds.'))
         .catch((e) => { toast(e.message); if (/expired|aren't set up/.test(e.message)) { S.notify.on = false; save(); refreshNotifyBox(); } });
       break;
@@ -2640,7 +2816,12 @@ loadAiVoices();
 handleDeepLink(location.href);
 if (Date.now() < (S.flashUntil || 0)) startFlash();
 if (navigator.serviceWorker) navigator.serviceWorker.addEventListener('message', (e) => { if (e.data && e.data.type === 'open') handleDeepLink(e.data.url); });
-if (S.notify.on && pushSupported() && Notification.permission !== 'granted') { S.notify.on = false; save(); }
+if (!NATIVE && S.notify.on && pushSupported() && Notification.permission !== 'granted') { S.notify.on = false; save(); }
+if (LN) {
+  nativeNotifyPermission();
+  scheduleNativeReminders(true);
+  document.addEventListener('visibilitychange', () => { if (!document.hidden) { updateBadge(); scheduleNativeReminders(); } });
+}
 updateBadge();
 syncReminderState(true);
 if (SY.on) syncNow();
