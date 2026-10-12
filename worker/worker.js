@@ -80,6 +80,18 @@ const PROGRESS_SCHEMA = {
   additionalProperties: false
 };
 
+// Fluff's personality changes the tone of everything the AI says out loud (never the facts).
+const PERSONA_STYLE = {
+  sunny: 'a bubbly, warm cheerleader who celebrates every bit of progress',
+  sarge: 'a friendly drill sergeant: short, punchy, firm but never mean or insulting, calls them "recruit"',
+  snooze: 'a sleepy, deadpan dust bunny with gentle, dry sarcasm who is secretly proud of them; never mean',
+  captain: 'a jolly pirate captain who talks about treasure and swabbing the deck, says "arr" and "matey"'
+};
+function withPersona(system, persona) {
+  const style = PERSONA_STYLE[persona];
+  return style ? `${system}\n\nVoice: write the summary, feedback or answer in the voice of Fluff, ${style}. Keep it kid-friendly and keep the same length limits. Chore titles stay plain and clear.` : system;
+}
+
 const ASK_SYSTEM = `You are Fluff, a friendly helper in a family chore game. Someone is cleaning a room and has a question, usually that they can't find the item a chore mentions.
 
 Rules:
@@ -144,6 +156,7 @@ export default {
       if (url.pathname === '/verify') return reply(await verify(body, env));
       if (url.pathname === '/ask') return reply(await ask(body, env));
       if (url.pathname.startsWith('/push/')) return reply(await pushRoute(url.pathname, body, env));
+      if (url.pathname === '/sync') return reply(await syncRoute(body, env));
       return reply({ error: 'Not found' }, 404);
     } catch (err) {
       return reply({ error: err.message || 'The AI helper hit a problem.' }, err.status || 502);
@@ -155,6 +168,62 @@ export default {
     ctx.waitUntil(runReminders(env, controller.scheduledTime || Date.now()));
   }
 };
+
+/* ---------- Household sync (D1) ----------
+   Needs a D1 database connected to the helper as SPARKLE_DB. Everyone using this helper shares one household.
+   Each shared thing (player, room, chore list, chore, sparkle event) is one row. Every write gets a new,
+   unique sequence number, so phones fetch only what changed since their last sync. */
+const SYNC_KINDS = ['player', 'room', 'session', 'task', 'event'];
+const SYNC_PAGE = 800;
+let syncReady = false;
+async function syncSetup(db) {
+  if (syncReady) return;
+  await db.batch([
+    db.prepare('CREATE TABLE IF NOT EXISTS items (kind TEXT NOT NULL, id TEXT NOT NULL, data TEXT, deleted INTEGER NOT NULL DEFAULT 0, seq INTEGER NOT NULL, PRIMARY KEY (kind, id))'),
+    db.prepare('CREATE INDEX IF NOT EXISTS items_seq ON items (seq)'),
+    db.prepare('CREATE TABLE IF NOT EXISTS meta (k TEXT PRIMARY KEY, v INTEGER NOT NULL)'),
+    db.prepare("INSERT OR IGNORE INTO meta (k, v) VALUES ('seq', 0)")
+  ]);
+  syncReady = true;
+}
+function cleanOps(ops) {
+  if (!Array.isArray(ops)) return [];
+  if (ops.length > 600) throw badRequest('Too many changes in one sync. Try again.');
+  return ops.map((o) => {
+    const k = String(o.k || ''), i = String(o.i || '');
+    if (!SYNC_KINDS.includes(k) || !/^[A-Za-z0-9_:-]{1,60}$/.test(i)) throw badRequest('A sync change wasn\'t valid.');
+    if (o.x) return { k, i, d: null, x: 1 };
+    if (!o.d || typeof o.d !== 'object') throw badRequest('A sync change wasn\'t valid.');
+    return { k, i, d: o.d, x: 0 };
+  });
+}
+async function syncRoute(body, env) {
+  const db = env.SPARKLE_DB;
+  if (!db) throw httpError('Household sync needs a D1 database connected to the helper as SPARKLE_DB.', 501);
+  await syncSetup(db);
+  const since = Math.max(0, Math.floor(Number(body.since) || 0));
+  const ops = cleanOps(body.ops);
+  const stmts = [];
+  if (ops.length) {
+    // Reserve one sequence number per change, then write every change in the same transaction.
+    stmts.push(db.prepare("UPDATE meta SET v = v + ?1 WHERE k = 'seq'").bind(ops.length));
+    stmts.push(db.prepare(
+      `INSERT INTO items (kind, id, data, deleted, seq)
+       SELECT json_extract(value, '$.k'), json_extract(value, '$.i'), json_extract(value, '$.d'), json_extract(value, '$.x'),
+              (SELECT v FROM meta WHERE k = 'seq') - ?2 + 1 + key
+       FROM json_each(?1) WHERE true
+       ON CONFLICT (kind, id) DO UPDATE SET data = excluded.data, deleted = excluded.deleted, seq = excluded.seq`
+    ).bind(JSON.stringify(ops), ops.length));
+  }
+  stmts.push(db.prepare('SELECT kind, id, data, deleted, seq FROM items WHERE seq > ?1 ORDER BY seq LIMIT ?2').bind(since, SYNC_PAGE));
+  stmts.push(db.prepare("SELECT v FROM meta WHERE k = 'seq'"));
+  const res = await db.batch(stmts);
+  const rows = res[res.length - 2].results || [];
+  const head = (res[res.length - 1].results[0] || {}).v || 0;
+  const items = rows.map((r) => ({ k: r.kind, i: r.id, x: r.deleted ? 1 : 0, s: r.seq, d: r.deleted || r.data == null ? null : JSON.parse(r.data) }));
+  const last = items.length ? items[items.length - 1].s : since;
+  return { items, seq: items.length === SYNC_PAGE ? last : Math.max(last, head), more: items.length === SYNC_PAGE, wrote: ops.length };
+}
 
 /* ---------- Reminders (Web Push) ----------
    Needs a KV namespace bound as SPARKLE_KV and a Cron Trigger such as "*\/15 * * * *".
@@ -248,7 +317,8 @@ function cleanPrefs(p = {}) {
   return {
     daily: p.daily === null || p.daily === false ? null : cleanTime(p.daily, PUSH_DEFAULTS.daily),
     streak: p.streak !== false, weekly: p.weekly !== false, flash: p.flash !== false,
-    quietStart: cleanTime(p.quietStart, PUSH_DEFAULTS.quietStart), quietEnd: cleanTime(p.quietEnd, PUSH_DEFAULTS.quietEnd)
+    quietStart: cleanTime(p.quietStart, PUSH_DEFAULTS.quietStart), quietEnd: cleanTime(p.quietEnd, PUSH_DEFAULTS.quietEnd),
+    persona: PERSONA_STYLE[p.persona] ? p.persona : 'sunny'
   };
 }
 function cleanState(s = {}) {
@@ -310,6 +380,50 @@ function inQuiet(mins, start, end) {
 }
 const pickOne = (arr) => arr[Math.floor(Math.random() * arr.length)];
 const plur = (n, w) => `${n} ${w}${n === 1 ? '' : 's'}`;
+// Reminder wording for each Fluff personality. {n} streak days, {open} chores, {room}, {name}, {line} = streak line.
+const PUSH_COPY = {
+  sunny: {
+    streakT: ['Your {n}-day streak ends at midnight!', "Don't break the chain{name}!"],
+    streakB: ['One quick chore keeps your {n} days going. Fluff believes in you!', 'Just one chore before bed saves your {n}-day streak.'],
+    listT: ['Your list is waiting', 'Ready for a quick win{name}?', 'Fluff saved your spot'],
+    listB: '{open} left in the {room}. Knock one out for a quick sparkle boost!{line}',
+    needyT: 'The {room} misses you', needyB: "A quick tidy would make it sparkle again. Fluff's ready when you are!{line}",
+    anyT: ['Time for a quick sparkle?', "Fluff's bored{name}!", 'Ten minutes, big sparkles'], anyB: 'Snap a messy room and Fluff will turn it into a game.{line}',
+    line: ' Keep your {n}-day streak going!', weekT: 'Your sparkle week', freshT: 'New week, fresh start',
+    flashT: 'Flash bonus! Double sparkles', flashB: 'Every chore you finish in the next 30 minutes earns double sparkles. Go go go!'
+  },
+  sarge: {
+    streakT: ['Recruit! Your {n}-day streak ends at midnight!', 'Streak in danger{name}!'],
+    streakB: ['One chore, recruit. That is all it takes to save {n} days. Move!', 'Do not let {n} days of hard work go to waste. One chore. Now!'],
+    listT: ['Mission still open, recruit', 'Report for duty{name}!', 'Back to the front lines'],
+    listB: '{open} left in the {room}. Get in there and finish the job, recruit!{line}',
+    needyT: 'The {room} needs backup', needyB: 'That room is a disaster zone, recruit. Deploy for ten minutes.{line}',
+    anyT: ['Drill time, recruit!', 'On your feet{name}!', 'Ten minutes. Go.'], anyB: 'Snap a room and I will give you your orders.{line}',
+    line: ' Protect that {n}-day streak!', weekT: 'Weekly debrief, recruit', freshT: 'New week, new mission',
+    flashT: 'Speed drill! Double sparkles', flashB: 'Every chore in the next 30 minutes counts double, recruit. Move, move, move!'
+  },
+  snooze: {
+    streakT: ['Your {n}-day streak ends at midnight. Just saying.', 'Psst{name}. The streak.'],
+    streakB: ['One chore saves {n} days of effort. I\'d do it for you, but I\'m napping.', 'Your {n}-day streak is about to nap forever. One chore wakes it up.'],
+    listT: ['Your list is still there', 'Hey{name}. The list.', 'I kept your spot warm'],
+    listB: '{open} left in the {room}. I checked. From bed.{line}',
+    needyT: 'The {room} looks how I feel', needyB: 'A quick tidy would fix it. I believe in you. Mostly.{line}',
+    anyT: ['Clean something? Maybe?', 'You up{name}?', 'Ten minutes. Then nap.'], anyB: 'Snap a messy room. I\'ll turn it into a game. Then sleep.{line}',
+    line: ' Also, your {n}-day streak. No pressure.', weekT: 'Your week, summarized sleepily', freshT: 'New week. Ugh. Fine.',
+    flashT: 'Double sparkles. Wow.', flashB: 'Chores in the next 30 minutes count double. Even I\'m tempted. Not really.'
+  },
+  captain: {
+    streakT: ['Arr! Yer {n}-day streak sinks at midnight!', "Don't let her sink{name}!"],
+    streakB: ['One chore keeps yer {n}-day streak afloat, matey!', 'Swab one deck before bed and save {n} days of treasure!'],
+    listT: ['Treasure still be waitin\'', 'Ahoy{name}!', 'Back to the ship, matey'],
+    listB: '{open} left in the {room}. Plunder one for a fine sparkle bounty!{line}',
+    needyT: 'The {room} be a shipwreck', needyB: 'A quick swabbin\' would make her shine again, matey!{line}',
+    anyT: ['All hands on deck!', 'Ahoy{name}! Fancy a treasure hunt?', 'Hoist the mop!'], anyB: 'Snap a messy room and Fluff will map the treasure.{line}',
+    line: ' Keep yer {n}-day streak afloat!', weekT: "Captain's weekly log", freshT: 'A fresh voyage begins',
+    flashT: 'Double treasure, matey!', flashB: 'Every chore in the next 30 minutes earns double sparkles. Hoist the sails!'
+  }
+};
+function fillCopy(t, v) { return String(t).replace(/\{(\w+)\}/g, (_, k) => v[k] ?? ''); }
 function pickReminder(rec, ms) {
   const p = { ...PUSH_DEFAULTS, ...rec.prefs }, st = rec.state || {}, sent = rec.sent || {};
   if (ms - (sent.last || 0) < 45 * 60000) return null; // never two pushes close together
@@ -317,48 +431,38 @@ function pickReminder(rec, ms) {
   const yesterday = localParts(rec.tz, ms - 864e5).date;
   if (inQuiet(L.mins, toMins(p.quietStart), toMins(p.quietEnd))) return null;
   const doneToday = st.lastDone === L.date;
-  const name = st.name ? `, ${st.name}` : '';
+  const copy = PUSH_COPY[p.persona] || PUSH_COPY.sunny;
+  const v = { name: st.name ? `, ${st.name}` : '', n: st.streak, open: plur(st.open || 0, 'chore'), room: String(st.openRoom || st.needy || '').toLowerCase() };
   const badge = st.open || 0;
 
   if (p.streak && !doneToday && st.lastDone === yesterday && st.streak >= 2 && sent.streak !== L.date && isDue(19 * 60 + 30, L.mins)) {
     return { kind: 'streak', mark: L.date, opts: { ttl: 3 * 3600, urgency: 'high', topic: 'streak' }, payload: {
-      title: pickOne([`Your ${st.streak}-day streak ends at midnight!`, `Don't break the chain${name}!`]),
-      body: pickOne([`One quick chore keeps your ${plur(st.streak, 'day')} going. Fluff believes in you!`, `Just one chore before bed saves your ${st.streak}-day streak.`]),
+      title: fillCopy(pickOne(copy.streakT), v), body: fillCopy(pickOne(copy.streakB), v),
       url: st.openRoomId ? `./?room=${st.openRoomId}` : './', tag: 'streak', badge } };
   }
   if (p.weekly && L.weekday === 'Sun' && sent.weekly !== L.date && isDue(18 * 60, L.mins)) {
     const w = st.week || {};
     return { kind: 'weekly', mark: L.date, opts: { ttl: 6 * 3600, urgency: 'normal', topic: 'weekly' }, payload: w.chores ? {
-      title: 'Your sparkle week',
-      body: `This week: ${plur(w.chores, 'chore')} and ${plur(w.sparkles, 'sparkle')}.${w.leader ? ` ${w.leader} led the house!` : ' Nice work!'} Ready for a fresh week?`,
+      title: copy.weekT,
+      body: `This week: ${plur(w.chores, 'chore')} and ${plur(w.sparkles, 'sparkle')}.${w.leader ? ` ${w.leader} led the house!` : ''} Ready for a fresh week?`,
       url: './', tag: 'weekly', badge } : {
-      title: 'New week, fresh start',
+      title: copy.freshT,
       body: 'Snap one room tonight and Fluff will turn it into a game. A quick win starts a new streak!',
       url: './', tag: 'weekly', badge } };
   }
   if (p.daily && !doneToday && sent.daily !== L.date && isDue(toMins(p.daily), L.mins)) {
-    const streakLine = st.streak >= 2 && st.lastDone === yesterday ? ` Keep your ${st.streak}-day streak going!` : '';
+    v.line = st.streak >= 2 && st.lastDone === yesterday ? fillCopy(copy.line, v) : '';
     let payload;
-    if (st.open && st.openRoom) payload = {
-      title: pickOne(['Your list is waiting', `Ready for a quick win${name}?`, 'Fluff saved your spot']),
-      body: `${plur(st.open, 'chore')} left in the ${st.openRoom.toLowerCase()}. Knock one out for a quick sparkle boost!${streakLine}`,
-      url: `./?room=${st.openRoomId}` };
-    else if (st.needy) payload = {
-      title: `The ${st.needy.toLowerCase()} misses you`,
-      body: `A quick tidy would make it sparkle again. Fluff's ready when you are!${streakLine}`,
-      url: st.needyId ? `./?room=${st.needyId}` : './' };
-    else payload = {
-      title: pickOne(['Time for a quick sparkle?', `Fluff's bored${name}!`, 'Ten minutes, big sparkles']),
-      body: `Snap a messy room and Fluff will turn it into a game.${streakLine}`, url: './' };
+    if (st.open && st.openRoom) payload = { title: fillCopy(pickOne(copy.listT), v), body: fillCopy(copy.listB, { ...v, room: st.openRoom.toLowerCase() }), url: `./?room=${st.openRoomId}` };
+    else if (st.needy) payload = { title: fillCopy(copy.needyT, { ...v, room: st.needy.toLowerCase() }), body: fillCopy(copy.needyB, v), url: st.needyId ? `./?room=${st.needyId}` : './' };
+    else payload = { title: fillCopy(pickOne(copy.anyT), v), body: fillCopy(copy.anyB, v), url: './' };
     return { kind: 'daily', mark: L.date, opts: { ttl: 2 * 3600, urgency: 'normal', topic: 'daily' }, payload: { ...payload, tag: 'daily', badge } };
   }
   // Flash bonus: about twice a week, at a random time between 4 and 7 PM.
   if (p.flash && L.mins >= 16 * 60 && L.mins < 19 * 60 && ms - (sent.flash || 0) > 2 * 864e5 && Math.random() < 0.03) {
     const until = ms + 30 * 60000;
     return { kind: 'flash', mark: ms, opts: { ttl: 15 * 60, urgency: 'high', topic: 'flash' }, payload: {
-      title: 'Flash bonus! Double sparkles',
-      body: 'Every chore you finish in the next 30 minutes earns double sparkles. Go go go!',
-      url: `./?flash=${until}`, tag: 'flash', badge } };
+      title: copy.flashT, body: copy.flashB, url: `./?flash=${until}`, tag: 'flash', badge } };
   }
   return null;
 }
@@ -386,7 +490,7 @@ async function runReminders(env, ms) {
 async function analyze(body, env) {
   if (!isB64(body.image)) throw badRequest('No photo received.');
   const room = String(body.room || 'room').slice(0, 40);
-  const j = await askClaude(env, env.MODEL_ANALYZE || 'claude-sonnet-5-5', ANALYZE_SYSTEM, [
+  const j = await askClaude(env, env.MODEL_ANALYZE || 'claude-sonnet-5-5', withPersona(ANALYZE_SYSTEM, body.persona), [
     imageBlock(body.image),
     { type: 'text', text: `This is the ${room}. Make the chore list.` }
   ], CHORE_SCHEMA, 4000);
@@ -411,7 +515,7 @@ async function verify(body, env) {
   if (isB64(body.before)) content.push({ type: 'text', text: 'BEFORE photo:' }, imageBlock(body.before));
   content.push({ type: 'text', text: 'AFTER photo:' }, imageBlock(body.after));
   content.push({ type: 'text', text: `Open chores:\n${JSON.stringify(tasks)}` });
-  const j = await askClaude(env, env.MODEL_VERIFY || 'claude-haiku-5-5', VERIFY_SYSTEM, content, PROGRESS_SCHEMA, 1500);
+  const j = await askClaude(env, env.MODEL_VERIFY || 'claude-haiku-5-5', withPersona(VERIFY_SYSTEM, body.persona), content, PROGRESS_SCHEMA, 1500);
   const ids = new Set(tasks.map((t) => t.id));
   return {
     done: (Array.isArray(j.done) ? j.done : []).map(String).filter((id) => ids.has(id)),
@@ -428,7 +532,7 @@ async function ask(body, env) {
   const task = body.task && body.task.title ? `The chore they're asking about: "${String(body.task.title).slice(0, 120)}"${body.task.zone ? ` (listed in the ${body.task.zone} part of the photo)` : ''}.\n` : '';
   const others = Array.isArray(body.tasks) ? body.tasks.slice(0, 20).map((t) => `- ${String(t).slice(0, 100)}`).join('\n') : '';
   content.push({ type: 'text', text: `${task}${others ? `Other open chores:\n${others}\n` : ''}Their question: ${question}` });
-  const j = await askClaude(env, env.MODEL_ASK || 'claude-sonnet-5-5', ASK_SYSTEM, content, ASK_SCHEMA, 800);
+  const j = await askClaude(env, env.MODEL_ASK || 'claude-sonnet-5-5', withPersona(ASK_SYSTEM, body.persona), content, ASK_SCHEMA, 800);
   return { answer: String(j.answer || '').slice(0, 300), zone: pickEnum(j.zone, [...ZONES, 'none'], 'none'), found: !!j.found };
 }
 

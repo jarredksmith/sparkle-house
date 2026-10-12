@@ -189,6 +189,13 @@ h1,h2,h3{font-family:var(--display);line-height:1.1;margin:0}
 .plist li{display:flex;align-items:center;gap:10px;background:#fff;border-radius:16px;padding:8px 10px;font-weight:800}
 .plist li.cur{box-shadow:inset 0 0 0 3px var(--grass)}
 .plist li button.pick{flex:1;display:flex;align-items:center;gap:10px;border:0;background:none;text-align:left;font-weight:800;padding:0}
+.persona-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.persona{border:3px solid transparent;background:#fff;border-radius:18px;padding:10px 8px 12px;display:flex;flex-direction:column;align-items:center;gap:2px;box-shadow:0 3px 0 var(--ledge);text-align:center}
+.persona .fluff{width:62px;height:62px}
+.persona b{font-family:var(--display);font-size:18px;line-height:1.1}
+.persona span{font-size:13px;font-weight:700;color:var(--ink-soft);line-height:1.25}
+.persona[aria-pressed="true"]{border-color:var(--grass);background:#F2FBF5}
+.persona-hello{margin:10px 0 0;font-weight:700;font-style:italic;color:var(--ink-soft);min-height:1.4em}
 .emoji-pick{display:flex;flex-wrap:wrap;gap:6px}
 .emoji-pick button{border:3px solid transparent;background:#fff;border-radius:12px;font-size:26px;width:48px;height:48px;padding:0}
 .emoji-pick button[aria-pressed="true"]{border-color:var(--grass)}
@@ -328,10 +335,10 @@ const STORE_KEY = 'sparklehouse.v1';
 const fresh = () => ({
   players: [], current: null,
   rooms: [
-    { id: 'kitchen', name: 'Kitchen', emoji: '🍳', shine: 45, shineAt: Date.now() },
-    { id: 'living', name: 'Living room', emoji: '🛋️', shine: 60, shineAt: Date.now() },
-    { id: 'bedroom', name: 'Bedroom', emoji: '🛏️', shine: 35, shineAt: Date.now() },
-    { id: 'bathroom', name: 'Bathroom', emoji: '🛁', shine: 50, shineAt: Date.now() }
+    { id: 'kitchen', name: 'Kitchen', emoji: '🍳', shine: 45, shineAt: Date.now(), created: 1 },
+    { id: 'living', name: 'Living room', emoji: '🛋️', shine: 60, shineAt: Date.now(), created: 2 },
+    { id: 'bedroom', name: 'Bedroom', emoji: '🛏️', shine: 35, shineAt: Date.now(), created: 3 },
+    { id: 'bathroom', name: 'Bathroom', emoji: '🛁', shine: 50, shineAt: Date.now(), created: 4 }
   ],
   sessions: {},
   settings: { workerUrl: '', token: '', sound: true, voice: false, voiceId: '', minGap: 20, camera: 'environment', pep: 'light' },
@@ -342,24 +349,65 @@ const fresh = () => ({
   coachTipSeen: false,
   deviceId: '',
   notify: { on: false, daily: '17:30', streak: true, weekly: true, flash: true, quietStart: '21:00', quietEnd: '08:00' },
-  flashUntil: 0
+  flashUntil: 0,
+  schema: 2
 });
 function load() {
   const base = fresh();
   try {
     const raw = localStorage.getItem(STORE_KEY);
     if (raw) {
-      const s = Object.assign(base, JSON.parse(raw));
+      const parsed = JSON.parse(raw);
+      const s = Object.assign(base, parsed);
+      s.schema = parsed.schema || 1;
       s.settings = Object.assign(fresh().settings, s.settings || {});
       s.notify = Object.assign(fresh().notify, s.notify || {});
-      return s;
+      return migrate(s);
     }
   } catch (e) { /* storage blocked */ }
   return base;
 }
+// Version 2: sparkle totals, streak and decor are worked out from the history of sparkle events,
+// so phones can share one household without overwriting each other's points.
+function migrate(s) {
+  if ((s.schema || 1) >= 2) return s;
+  s.history = (s.history || []).map((h) => ({ id: h.id || uid() + uid(), ...h }));
+  const by = {}; let total = 0;
+  s.history.forEach((h) => { by[h.player] = (by[h.player] || 0) + h.pts; total += h.pts; });
+  (s.players || []).forEach((p, i) => {
+    p.created = p.created || i + 1;
+    const diff = (p.sparkles || 0) - (by[p.id] || 0);
+    if (diff > 0) { s.history.push({ id: uid() + uid(), ts: 1, room: '', title: 'Earlier sparkles', pts: diff, player: p.id, task: 'carry' }); total += diff; }
+  });
+  const rest = ((s.household && s.household.lifetime) || 0) - total;
+  if (rest > 0) s.history.push({ id: uid() + uid(), ts: 1, room: '', title: 'Earlier household sparkles', pts: rest, player: '', task: 'carry' });
+  (s.rooms || []).forEach((r, i) => { r.created = r.created || i + 1; });
+  s.schema = 2;
+  return s;
+}
 let S = load();
+recompute();
+function addEvent(e) { e.id = e.id || uid() + uid(); S.history.unshift(e); return e; }
+function recompute() {
+  const by = {}; let total = 0;
+  for (const h of S.history) { total += h.pts; by[h.player] = (by[h.player] || 0) + h.pts; }
+  S.players.forEach((p) => { p.sparkles = by[p.id] || 0; });
+  S.household.lifetime = total;
+  S.unlocked = DECOR.filter((d) => total >= d.c).map((d) => d.id);
+  // Streak: days in a row (household) with at least one finished chore, counting back from the latest.
+  const real = S.history.filter((h) => h.task !== 'carry' && h.ts > 1);
+  if (!real.length) { S.streak = { count: 0, last: '' }; return; }
+  const days = new Set(real.map((h) => dayKey(h.ts)));
+  const latest = real.reduce((a, h) => Math.max(a, h.ts), 0);
+  const d = new Date(latest); d.setHours(12, 0, 0, 0);
+  let count = 0;
+  while (days.has(dayKey(d.getTime()))) { count++; d.setDate(d.getDate() - 1); }
+  S.streak = { count, last: dayKey(latest) };
+}
+function storeLocal() { try { localStorage.setItem(STORE_KEY, JSON.stringify(S)); } catch (e) { /* ignore */ } }
 function save() {
-  try { localStorage.setItem(STORE_KEY, JSON.stringify(S)); } catch (e) { /* ignore */ }
+  recompute();
+  storeLocal();
   if (typeof afterSave === 'function') afterSave();
 }
 
@@ -373,7 +421,20 @@ const shineOf = (r) => Math.max(0, Math.round(r.shine - ((Date.now() - r.shineAt
 function setShine(r, v) { r.shine = clamp(Math.round(v), 0, 100); r.shineAt = Date.now(); }
 
 /* ---------- art ---------- */
-function fluffSVG(cls = '') {
+const FLUFF_GEAR = {
+  // Sunny: a little bow
+  sunny: { top: '<g transform="translate(67 23) rotate(18)"><path d="M0 0L-11-8L-11 8Z M0 0L11-8L11 8Z" fill="#FFD447" stroke="#E2B321" stroke-width="1.6" stroke-linejoin="round"/><circle r="3.4" fill="#FF8FA3"/></g>' },
+  // Sarge: an army cap with a star
+  sarge: { top: '<path d="M25 31Q50 5 75 31Z" fill="#6B8E4E"/><path d="M19 31Q50 25 83 32L84 37Q50 30 17 36Z" fill="#4E6B38"/><path d="M50 15l1.6 3.4 3.7.4-2.8 2.5.8 3.6L50 23l-3.3 1.9.8-3.6-2.8-2.5 3.7-.4z" fill="#FFD447"/>' },
+  // Snooze: a nightcap and sleepy eyelids
+  snooze: { top: '<path d="M27 30Q40 4 72 9Q68 20 76 31Z" fill="#8AA8E6"/><circle cx="73" cy="9" r="5.5" fill="#fff"/><path d="M24 31Q51 23 78 31L78 36Q51 28 24 35Z" fill="#fff"/>',
+    face: '<g class="eye-open"><path d="M36.5 48.5h9.5v4.6h-9.5z M54.5 48.5h9.5v4.6h-9.5z" fill="#E3E7EC"/><path d="M36.6 53h9 M54.6 53h9" stroke="#2D3B36" stroke-width="1.6" stroke-linecap="round"/></g>' },
+  // Captain: a pirate hat and eye patch
+  captain: { top: '<path d="M16 31Q28 9 50 13Q72 9 84 31Q67 24 50 27Q33 24 16 31Z" fill="#2D3B36"/><circle cx="50" cy="20.5" r="3.4" fill="#fff"/><path d="M47.6 24.5h4.8" stroke="#fff" stroke-width="1.4"/>',
+    face: '<path d="M33 41L70 58" stroke="#2D3B36" stroke-width="1.7"/><ellipse cx="59" cy="53" rx="6" ry="5.4" fill="#2D3B36"/>' }
+};
+function fluffSVG(cls = '', persona = personaId()) {
+  const gear = FLUFF_GEAR[persona] || {};
   let bumps = '';
   for (let k = 0; k < 12; k++) {
     const a = (k * Math.PI) / 6;
@@ -386,6 +447,7 @@ function fluffSVG(cls = '') {
     <g class="eye-closed" fill="none" stroke="#2D3B36" stroke-width="2.6" stroke-linecap="round"><path d="M37 54q4-5 8 0"/><path d="M55 54q4-5 8 0"/></g>
     <ellipse cx="34.5" cy="61.5" rx="4.6" ry="2.6" fill="#FFA9B8"/><ellipse cx="65.5" cy="61.5" rx="4.6" ry="2.6" fill="#FFA9B8"/>
     <path d="M46 60q4 4 8 0" fill="none" stroke="#2D3B36" stroke-width="2.2" stroke-linecap="round"/>
+    ${gear.face || ''}${gear.top || ''}
   </svg>`;
 }
 const STAR = (fill = '#2D3B36') => `<svg class="star" viewBox="0 0 24 24" aria-hidden="true"><path fill="${fill}" d="M12 1.5l2.3 7.2 7.2 2.3-7.2 2.3L12 20.5l-2.3-7.2L2.5 11l7.2-2.3z"/></svg>`;
@@ -551,13 +613,6 @@ function typeInto(el, text) {
 }
 
 /* ---------- scoring ---------- */
-function bumpStreak() {
-  const today = dayKey();
-  if (S.streak.last === today) return;
-  const y = dayKey(Date.now() - 864e5);
-  S.streak.count = S.streak.last === y ? S.streak.count + 1 : 1;
-  S.streak.last = today;
-}
 function checkUnlocks() {
   DECOR.forEach((d) => {
     if (S.household.lifetime >= d.c && !S.unlocked.includes(d.id)) {
@@ -578,31 +633,29 @@ function awardTask(roomId, task, how) {
   S.household.lifetime += task.points;
   const total = sess.tasks.reduce((a, t) => a + t.points, 0) || 1;
   setShine(room, shineOf(room) + (100 * task.points) / total);
-  S.history.unshift({ ts: task.doneAt, room: room.name, title: task.title, pts: task.points, player: p.id, task: task.id });
+  addEvent({ ts: task.doneAt, room: room.name, title: task.title, pts: task.points, player: p.id, task: task.id });
   if (Date.now() < (S.flashUntil || 0)) {
     task.flash = true;
     p.sparkles += task.points; S.household.lifetime += task.points; gained += task.points;
-    S.history.unshift({ ts: task.doneAt, room: room.name, title: 'Flash bonus', pts: task.points, player: p.id, task: task.id + ':flash' });
+    addEvent({ ts: task.doneAt, room: room.name, title: 'Flash bonus', pts: task.points, player: p.id, task: task.id + ':flash' });
   }
   if (sess.tasks.every((t) => t.done) && !sess.sweep) {
     sess.sweep = true;
     p.sparkles += 10; S.household.lifetime += 10; gained += 10;
     setShine(room, 100);
-    S.history.unshift({ ts: Date.now(), room: room.name, title: 'Clean sweep bonus', pts: 10, player: p.id, task: 'sweep' });
+    addEvent({ ts: Date.now(), room: room.name, title: 'Clean sweep bonus', pts: 10, player: p.id, task: sweepKey(roomId) });
     setTimeout(() => toast('Clean sweep! +10 bonus sparkles', 'win'), 900);
   }
-  S.history = S.history.slice(0, 300);
-  bumpStreak();
   checkUnlocks();
   save();
   return gained;
 }
+const sweepKey = (roomId) => `sweep:${roomId}:${(S.sessions[roomId] && S.sessions[roomId].createdAt) || 0}`;
 function awardBonus(roomId, pts, title) {
   const p = player();
   const room = roomById(roomId);
   p.sparkles += pts; S.household.lifetime += pts;
-  S.history.unshift({ ts: Date.now(), room: room ? room.name : '', title, pts, player: p.id, task: 'bonus' });
-  S.history = S.history.slice(0, 300);
+  addEvent({ ts: Date.now(), room: room ? room.name : '', title, pts, player: p.id, task: 'bonus' });
   checkUnlocks(); save();
   return pts;
 }
@@ -619,10 +672,8 @@ function undoTask(roomId, task) {
   delete task.flash;
   if (sess.sweep) {
     sess.sweep = false;
-    const sp = S.players.find((x) => S.history.some((h) => h.task === 'sweep' && h.player === x.id)) || p;
-    sp.sparkles = Math.max(0, sp.sparkles - 10);
-    S.household.lifetime = Math.max(0, S.household.lifetime - 10);
-    const i = S.history.findIndex((h) => h.task === 'sweep' && h.room === room.name);
+    const key = sweepKey(roomId);
+    const i = S.history.findIndex((h) => h.task === key || (h.task === 'sweep' && h.room === room.name));
     if (i > -1) S.history.splice(i, 1);
   }
   task.done = false; delete task.how; delete task.doneAt; delete task.by;
@@ -713,7 +764,7 @@ const api = {
       await wait(1600);
       return { summary: `Demo list for the ${room.toLowerCase()}. Connect your AI helper in Settings to get a list from your real photo.`, tasks: DEMO_TASKS.map((t) => ({ ...t })), demo: true };
     }
-    return { ...(await this.call('/analyze', { image: b64, room })), demo: false };
+    return { ...(await this.call('/analyze', { image: b64, room, persona: personaId() })), demo: false };
   },
   async verify(beforeB64, afterB64, tasks) {
     if (!this.live) {
@@ -724,7 +775,7 @@ const api = {
       }
       return { done: [], feedback: NOCHANGE_LINES[Math.floor(Math.random() * NOCHANGE_LINES.length)] };
     }
-    return this.call('/verify', { before: beforeB64 || null, after: afterB64, tasks });
+    return this.call('/verify', { before: beforeB64 || null, after: afterB64, tasks, persona: personaId() });
   },
   async pushKey() {
     const r = await fetch(this.base() + '/push/key', { headers: { 'X-App-Token': S.settings.token || '' } });
@@ -790,9 +841,9 @@ function renderHome() {
   const p = player();
   const neediest = [...S.rooms].sort((a, b) => shineOf(a) - shineOf(b))[0];
   const openRoom = S.rooms.find((r) => S.sessions[r.id] && S.sessions[r.id].tasks.some((t) => !t.done));
-  let line = `Hi ${p.name}! Which room are we tackling?`;
-  if (openRoom) line = `Hi ${p.name}! The ${openRoom.name.toLowerCase()} list is still waiting for you.`;
-  else if (neediest && shineOf(neediest) < 40) line = `Hi ${p.name}! The ${neediest.name.toLowerCase()} could use some love.`;
+  let greeting = line('greet', { name: p.name });
+  if (openRoom) greeting = line('greetList', { name: p.name, room: openRoom.name.toLowerCase() });
+  else if (neediest && shineOf(neediest) < 40) greeting = line('greetNeedy', { name: p.name, room: neediest.name.toLowerCase() });
   const doneWeek = S.history.filter((h) => h.ts >= Date.now() - 7 * 864e5 && h.task !== 'sweep').length;
   app.innerHTML = topbar() + `
     <div class="speaker">${fluffSVG()}<div class="dialog"><span class="tag">Fluff</span><span id="homeLine"></span></div></div>
@@ -817,7 +868,7 @@ function renderHome() {
       <button class="room add" data-act="add-room">+ Add a room</button>
     </div>
     ${api.live ? '' : '<p class="demo-note">You\'re in <b>demo mode</b>. Tasks are samples until you connect your AI helper in Settings.</p>'}`;
-  typeInto($('#homeLine'), line);
+  typeInto($('#homeLine'), greeting);
 }
 function renderRoom() {
   const room = roomById(ui.roomId);
@@ -932,6 +983,10 @@ function openSettings() {
     <label class="field">Household passcode<input id="sToken" autocapitalize="off" autocorrect="off" value="${esc(st.token)}"><small>Must match the APP_TOKEN you set on the helper.</small></label>
     <button class="btn small" data-act="test-helper">Test connection</button>
     <div id="sStatus"></div>
+    <h3>Fluff's personality</h3>
+    <p style="margin:0 0 10px;font-weight:600">For ${esc(player() ? player().name : 'you')}. Everyone in the house can pick their own coach.</p>
+    <div class="persona-grid" id="personaGrid">${personaCards()}</div>
+    <p class="persona-hello" id="personaHello"></p>
     <h3>Coach Mode</h3>
     <label class="field"><span>Wait at least <span id="gapVal">${st.minGap}</span> seconds between checks</span><input id="sGap" type="range" min="10" max="60" step="5" value="${st.minGap}"></label>
     <label class="field">Fluff's pep talk<select id="sPep">
@@ -944,6 +999,8 @@ function openSettings() {
     <label class="field">Fluff's voice<select id="sVoiceId">${voiceOptions()}</select><small id="voiceHint">${voiceHint()}</small></label>
     <button class="btn small" data-act="test-voice">Play sample</button>
     <audio id="previewAudio" preload="none"></audio>
+    <h3>Household sync</h3>
+    <div id="syncBox">${syncHTML()}</div>
     <h3>Reminders</h3>
     <div id="notifyBox">${notifyHTML()}</div>
     <h3>Rooms</h3>
@@ -977,6 +1034,10 @@ function refreshVoiceField() {
   sel.innerHTML = voiceOptions();
   if (keep && [...sel.options].some((o) => o.value === keep)) sel.value = keep;
   if (hint) hint.textContent = voiceHint();
+}
+function personaCards() {
+  const cur = personaId();
+  return Object.entries(PERSONAS).map(([id, pp]) => `<button class="persona" data-act="pick-persona" data-id="${id}" aria-pressed="${cur === id}">${fluffSVG('', id)}<b>${pp.name}</b><span>${esc(pp.tag)}</span></button>`).join('');
 }
 function openAddRoom() {
   let pick = ROOM_EMOJI[0];
@@ -1062,6 +1123,217 @@ function openAreaEditor({ src, w, h, mirror = false, initial = null, tip }) {
   });
 }
 
+/* ---------- Household sync: every phone on this helper shares one household ----------
+   Each shared thing (player, room, chore list, chore, sparkle event) is compared against the last
+   version the helper confirmed. Changes go up, everyone else's changes come down. Last write wins
+   per item; sparkle totals are worked out from events, so points are never lost. */
+const SYNC_KEY = 'sparklehouse.sync';
+const SYNC_BATCH = 500;
+const TASK_FIELDS = ['title', 'detail', 'zone', 'points', 'minutes', 'category', 'done', 'how', 'doneAt', 'by', 'flash'];
+function loadSync() {
+  const d = { on: false, since: 0, base: {}, last: 0, error: '' };
+  try { return Object.assign(d, JSON.parse(localStorage.getItem(SYNC_KEY) || '{}')); } catch (e) { return d; }
+}
+let SY = loadSync();
+function saveSync() { try { localStorage.setItem(SYNC_KEY, JSON.stringify(SY)); } catch (e) { /* storage full */ } }
+function pickFields(o, fields) { const r = {}; for (const f of fields) if (o[f] !== undefined && o[f] !== null) r[f] = o[f]; return r; }
+function syncEntities() {
+  const m = new Map();
+  S.players.forEach((p) => m.set('player:' + p.id, JSON.stringify(pickFields(p, ['name', 'color', 'persona', 'created']))));
+  S.rooms.forEach((r) => m.set('room:' + r.id, JSON.stringify(pickFields(r, ['name', 'emoji', 'shine', 'shineAt', 'photoArea', 'created']))));
+  Object.entries(S.sessions).forEach(([rid, ss]) => {
+    if (!roomById(rid)) return;
+    m.set('session:' + rid, JSON.stringify(pickFields(ss, ['summary', 'createdAt', 'demo', 'sweep'])));
+    ss.tasks.forEach((t, i) => m.set('task:' + t.id, JSON.stringify({ ...pickFields(t, TASK_FIELDS), roomId: rid, order: i })));
+  });
+  S.history.forEach((h) => m.set('event:' + h.id, JSON.stringify(pickFields(h, ['ts', 'room', 'title', 'pts', 'player', 'task']))));
+  return m;
+}
+function splitKey(key) { const c = key.indexOf(':'); return [key.slice(0, c), key.slice(c + 1)]; }
+function syncDiff(cur, base) {
+  const ops = [];
+  cur.forEach((json, key) => { if (base[key] !== json) { const [k, i] = splitKey(key); ops.push({ k, i, d: JSON.parse(json) }); } });
+  Object.keys(base).forEach((key) => { if (!cur.has(key)) { const [k, i] = splitKey(key); ops.push({ k, i, x: 1 }); } });
+  return ops;
+}
+function resetObj(o, keep = []) { if (!o) return {}; for (const k of Object.keys(o)) if (!keep.includes(k)) delete o[k]; return o; }
+// Rebuild the household from a full set of items, reusing existing objects so open screens stay connected.
+function applyEntities(items) {
+  const before = new Set(S.unlocked);
+  const by = { player: [], room: [], session: [], task: [], event: [] };
+  items.forEach((json, key) => { const [k, id] = splitKey(key); if (by[k]) by[k].push({ id, d: JSON.parse(json) }); });
+  const oldP = new Map(S.players.map((p) => [p.id, p]));
+  S.players = by.player.map(({ id, d }) => Object.assign(resetObj(oldP.get(id)), d, { id })).sort((a, b) => (a.created || 0) - (b.created || 0));
+  const oldR = new Map(S.rooms.map((r) => [r.id, r]));
+  S.rooms = by.room.map(({ id, d }) => Object.assign(resetObj(oldR.get(id), ['coachArea']), d, { id })).sort((a, b) => (a.created || 0) - (b.created || 0));
+  const oldT = new Map();
+  Object.values(S.sessions).forEach((ss) => ss.tasks.forEach((t) => oldT.set(t.id, t)));
+  const sessions = {};
+  by.session.forEach(({ id, d }) => { sessions[id] = Object.assign(resetObj(S.sessions[id]), d, { tasks: [] }); });
+  by.task.sort((a, b) => (a.d.order || 0) - (b.d.order || 0)).forEach(({ id, d }) => {
+    const { roomId, order, ...rest } = d;
+    if (!sessions[roomId]) sessions[roomId] = { tasks: [], summary: '', createdAt: Date.now() };
+    sessions[roomId].tasks.push(Object.assign(resetObj(oldT.get(id)), rest, { id }));
+  });
+  S.sessions = sessions;
+  // One sparkle event per chore (and per clean sweep): if two phones scored the same thing at once, keep one,
+  // preferring the person the chore itself credits.
+  const doer = new Map();
+  Object.values(sessions).forEach((ss) => ss.tasks.forEach((t) => { if (t.by) doer.set(t.id, t.by); }));
+  const events = by.event.map(({ id, d }) => ({ id, ...d })).sort((a, b) => a.ts - b.ts || (a.id < b.id ? -1 : 1));
+  const winner = new Map();
+  events.forEach((e) => {
+    const t = String(e.task || '');
+    if (!t || t === 'sweep' || t === 'bonus' || t === 'carry') return;
+    const cur = winner.get(t);
+    const base = t.replace(/:flash$/, '');
+    if (!cur || (cur.player !== doer.get(base) && e.player === doer.get(base))) winner.set(t, e);
+  });
+  S.history = events.filter((e) => { const t = String(e.task || ''); return !winner.has(t) || winner.get(t) === e; }).reverse();
+  if (!S.players.some((p) => p.id === S.current)) S.current = S.players[0] ? S.players[0].id : null;
+  recompute();
+  DECOR.filter((d) => S.unlocked.includes(d.id) && !before.has(d.id)).forEach((d) => toast(`The house unlocked: ${d.e} ${d.n}`, 'win'));
+  storeLocal();
+}
+function baseFrom(items, base = {}) {
+  const out = { ...base };
+  items.forEach((it) => { const key = it.k + ':' + it.i; if (it.x) delete out[key]; else out[key] = JSON.stringify(it.d); });
+  return out;
+}
+let syncBusy = false, syncAgain = false, syncTimer = null;
+function scheduleSync(ms = 1500) {
+  if (!SY.on) return;
+  clearTimeout(syncTimer);
+  syncTimer = setTimeout(syncNow, ms);
+}
+async function syncNow() {
+  if (!SY.on || !api.live) return;
+  if (syncBusy) { syncAgain = true; return; }
+  if (C.checking || CH.ending || (SY.backoff && Date.now() < SY.backoff)) { scheduleSync(3000); return; }
+  syncBusy = true;
+  let changed = false;
+  try {
+    let more = true, first = true;
+    while (more) {
+      const sent = syncEntities();
+      const oldBase = SY.base;
+      const ops = first ? syncDiff(sent, oldBase).slice(0, SYNC_BATCH) : [];
+      const sentKeys = new Set(ops.map((o) => o.k + ':' + o.i));
+      const res = await api.call('/sync', { since: SY.since, ops });
+      const base = baseFrom(res.items, oldBase);
+      // Keep anything changed on this phone that the helper hasn't confirmed yet.
+      const now = syncEntities();
+      const final = new Map(Object.entries(base));
+      new Set([...now.keys(), ...Object.keys(oldBase), ...sent.keys()]).forEach((key) => {
+        const local = now.get(key);
+        const pending = sentKeys.has(key) ? local !== sent.get(key) : local !== oldBase[key];
+        if (pending) { if (local === undefined) final.delete(key); else final.set(key, local); }
+      });
+      const differs = final.size !== now.size || [...final].some(([k, v]) => now.get(k) !== v);
+      if (differs) { applyEntities(final); changed = true; }
+      SY.base = base; SY.since = res.seq; SY.last = Date.now(); SY.error = ''; SY.backoff = 0;
+      more = res.more; first = false;
+      if (ops.length === SYNC_BATCH || syncDiff(syncEntities(), SY.base).length) syncAgain = true;
+    }
+    saveSync();
+  } catch (e) {
+    SY.error = e.message || 'Couldn\'t reach the household.';
+    SY.backoff = Date.now() + 30000;
+    saveSync();
+  } finally {
+    syncBusy = false;
+    if (changed) { if (C.el) renderCoachTasks(); render(); updateBadge(); syncReminderState(); }
+    refreshSyncBox();
+    if (syncAgain) { syncAgain = false; scheduleSync(300); }
+  }
+}
+async function pullAll() {
+  let since = 0, items = [], more = true;
+  while (more) { const r = await api.call('/sync', { since, ops: [] }); items = items.concat(r.items); since = r.seq; more = r.more; }
+  return { base: baseFrom(items), since };
+}
+// mode: 'auto' (start a new household if none exists), 'join' (use the household's data), 'merge' (combine)
+async function startSync(mode) {
+  const { base, since } = await pullAll();
+  const exists = Object.keys(base).some((k) => k.startsWith('player:'));
+  if (!exists) {
+    SY = { on: true, since, base, last: 0, error: '' }; saveSync();
+    await syncNow();
+    return 'started';
+  }
+  if (mode === 'auto') return 'exists';
+  const myName = (player() && player().name || '').toLowerCase();
+  if (mode === 'join') {
+    const mine = player();
+    const items = new Map(Object.entries(base));
+    const houseHasMe = Object.entries(base).some(([k, j]) => k.startsWith('player:') && JSON.parse(j).name.toLowerCase() === myName);
+    // A new family member joining keeps themselves; everything else comes from the household.
+    if (mine && !houseHasMe) items.set('player:' + mine.id, JSON.stringify(pickFields(mine, ['name', 'color', 'persona', 'created'])));
+    SY = { on: true, since, base, last: 0, error: '' };
+    applyEntities(items);
+    const me = S.players.find((p) => p.name.toLowerCase() === myName);
+    if (me) S.current = me.id;
+    saveSync(); save();
+    return 'joined';
+  }
+  // merge: people with the same name become one person; the household's version wins where both have something
+  const remote = Object.entries(base).filter(([k]) => k.startsWith('player:')).map(([k, j]) => ({ id: k.slice(7), ...JSON.parse(j) }));
+  const idMap = {};
+  S.players.forEach((p) => { const m = remote.find((r) => r.name.toLowerCase() === p.name.toLowerCase()); if (m) idMap[p.id] = m.id; });
+  S.history.forEach((h) => { if (idMap[h.player]) h.player = idMap[h.player]; });
+  Object.values(S.sessions).forEach((ss) => ss.tasks.forEach((t) => { if (idMap[t.by]) t.by = idMap[t.by]; }));
+  if (idMap[S.current]) S.current = idMap[S.current];
+  S.players = S.players.filter((p) => !idMap[p.id]);
+  const houseLists = new Set(Object.keys(base).filter((k) => k.startsWith('session:')).map((k) => k.slice(8)));
+  const merged = new Map(Object.entries(base));
+  syncEntities().forEach((json, key) => {
+    if (merged.has(key)) return;
+    if (key.startsWith('task:') && houseLists.has(JSON.parse(json).roomId)) return;
+    merged.set(key, json);
+  });
+  SY = { on: true, since, base, last: 0, error: '' };
+  applyEntities(merged); saveSync(); save();
+  await syncNow();
+  return 'merged';
+}
+function stopSync() { SY.on = false; clearTimeout(syncTimer); saveSync(); refreshSyncBox(); toast('This phone stopped syncing. Its data stays here.'); }
+const agoText = (t) => { const s = Math.round((Date.now() - t) / 1000); return s < 10 ? 'just now' : s < 60 ? `${s} seconds ago` : s < 3600 ? `${Math.round(s / 60)} minutes ago` : 'a while ago'; };
+function syncHTML() {
+  if (!api.live) return '<p style="font-weight:600;margin:0">Connect your AI helper above to share one household across phones.</p>';
+  if (!SY.on) return `<p style="font-weight:600;margin:0 0 10px">Share rooms, chore lists, players, sparkles and the streak with every phone in the house. Updates show up within seconds.</p>
+    <button class="btn primary" data-act="sync-setup" style="width:100%">Set up household sync</button>`;
+  return `<p style="font-weight:700;margin:0 0 6px">${SY.error ? `<span style="color:#C2405E">${esc(SY.error)}</span>` : `Synced with the household ${SY.last ? agoText(SY.last) : 'just now'}.`}</p>
+    <p style="font-weight:600;margin:0 0 10px;color:var(--ink-soft)">${S.players.length === 1 ? '1 person' : `${S.players.length} people`} and ${plural(S.rooms.length, 'room')} shared.</p>
+    <div class="row"><button class="btn small" data-act="sync-now">Sync now</button><button class="btn small text" data-act="sync-off">Stop syncing on this phone</button></div>`;
+}
+function refreshSyncBox() { const b = $('#syncBox'); if (b) b.innerHTML = syncHTML(); }
+function openSyncChoice() {
+  openSheet(`<h2>Your household already exists</h2>
+    <p style="font-weight:600;margin:0 0 14px">Another phone has already set up sync. How should this phone join?</p>
+    <button class="btn primary" data-act="sync-join" style="width:100%;margin-bottom:8px">Join the household</button>
+    <p style="font-weight:600;font-size:14px;color:var(--ink-soft);margin:0 0 16px">Use the household's rooms, lists and sparkles. This phone's own data is replaced.</p>
+    <button class="btn" data-act="sync-merge" style="width:100%;margin-bottom:8px">Combine with this phone's data</button>
+    <p style="font-weight:600;font-size:14px;color:var(--ink-soft);margin:0 0 16px">Adds this phone's people, rooms and sparkle history. People with the same name become one person.</p>
+    <button class="btn text" data-act="close-sheet" style="margin:0 auto">Cancel</button>`);
+}
+async function runSyncSetup(mode) {
+  busy(mode === 'join' ? 'Joining the household…' : mode === 'merge' ? 'Combining…' : 'Checking the household…');
+  try {
+    const r = await startSync(mode);
+    unbusy();
+    if (r === 'exists') { openSyncChoice(); return; }
+    closeSheet();
+    toast(r === 'started' ? 'Household started! Set up sync on the other phones to join it.' : r === 'joined' ? 'Joined the household!' : 'Combined with the household!', 'win');
+    render();
+    if (r === 'joined' && !S.players.some((p) => p.id === S.current)) openPlayers();
+  } catch (e) {
+    unbusy();
+    toast(e.message || 'Couldn\'t set up sync. Try again.');
+  }
+}
+setInterval(() => { if (SY.on && !document.hidden) syncNow(); }, 8000);
+document.addEventListener('visibilitychange', () => { if (!document.hidden && SY.on) syncNow(); });
+
 /* ---------- Reminders: push notifications sent by the AI helper on a schedule ---------- */
 const pushSupported = () => 'serviceWorker' in navigator && 'PushManager' in window && 'Notification' in window;
 const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
@@ -1096,7 +1368,7 @@ function readNotifyForm() {
   n.streak = $('#nStreak').checked; n.weekly = $('#nWeekly').checked; n.flash = $('#nFlash').checked;
   n.quietStart = $('#nQs').value || '21:00'; n.quietEnd = $('#nQe').value || '08:00';
 }
-const notifyPrefs = () => { const { on, ...p } = S.notify; return p; };
+const notifyPrefs = () => { const { on, ...p } = S.notify; return { ...p, persona: personaId() }; };
 function pushSummary() {
   const p = player();
   const open = S.rooms.map((r) => ({ r, n: S.sessions[r.id] ? S.sessions[r.id].tasks.filter((t) => !t.done).length : 0 })).filter((x) => x.n).sort((a, b) => b.n - a.n);
@@ -1173,7 +1445,7 @@ function updateBadge() {
   const n = Object.values(S.sessions).reduce((a, s) => a + s.tasks.filter((t) => !t.done).length, 0);
   (n ? navigator.setAppBadge(n) : navigator.clearAppBadge()).catch(() => {});
 }
-function afterSave() { updateBadge(); syncReminderState(); }
+function afterSave() { updateBadge(); syncReminderState(); scheduleSync(); }
 document.addEventListener('visibilitychange', () => { if (document.hidden) syncReminderState(true); });
 
 /* Flash bonus: opened from a notification, double sparkles until the window ends. */
@@ -1288,7 +1560,7 @@ async function checkWithPhoto(file, room) {
     const after = toJpeg(afterSrc, afterSrc.naturalWidth, afterSrc.naturalHeight, 960, 0.8, before ? before.area : room.photoArea);
     const res = await api.verify(before ? before.small : null, after.b64, open.map((t) => ({ id: t.id, title: t.title, zone: t.zone })));
     const r = applyVerify(room.id, res, 'photo');
-    mem.lastFeedback[room.id] = res.feedback || (r.count ? 'Nice work!' : 'I couldn\'t spot changes yet.');
+    mem.lastFeedback[room.id] = res.feedback || line(r.count ? 'nice' : 'noChange');
     unbusy();
     if (r.count) { pop(`+${r.pts} ✦`); unlockAudio(); chime(); }
   } catch (e) {
@@ -1306,36 +1578,145 @@ const C = { el: null, stream: null, video: null, loop: null, clock: null, wake: 
 function coachLine(text, voice = true) { C.lastSpoke = Date.now(); typeInto($('#coachLine'), text); if (voice) speak(text); }
 
 /* ---------- Pep talk: encouragement driven by what's happening in Coach Mode ---------- */
-const PEP_LINES = {
-  work: [
-    'You\'re really moving, {name}! Love the hustle.',
-    'Look at you go. This room doesn\'t stand a chance.',
-    'Nonstop! That\'s how sparkles get earned.',
-    'Great pace, {name}. Keep that energy going.',
-    '{mins} of hard work so far. I see you!',
-    'The room is already looking different. Keep it up!'
-  ],
-  nudge: [
-    'Still with me, {name}? Quick one: {task}. That\'s {tp} sparkles.',
-    'Let\'s keep rolling. Next up: {task}, worth {tp} sparkles.',
-    'Break\'s over! Easy win: {task}.',
-    'Ready for the next one? Try this: {task}.'
-  ],
-  nudgeAgain: [
-    'Come on, {name}, just one more! {Task}. It only takes about {tm}.',
-    'Don\'t leave me hanging! {left} to go. Quickest one: {task}.',
-    '{pts} sparkles so far. Let\'s make it more! Start here: {task}.'
-  ],
-  recap: [
-    '{mins} in, {done} done, and {pts} sparkles earned. Nice!',
-    'Check-in: {done} down, {left} to go. You\'ve got this, {name}.',
-    '{pts} sparkles this session so far. Keep stacking them!'
-  ],
-  half: ['Halfway there! The second half always goes faster.', 'That\'s half the list, {name}! Keep it up.'],
-  last: ['Just one chore left: {task}. Finish strong!', 'One to go! {Task}, and this room is done.'],
-  near: ['Only {need} sparkles until you unlock the {item}!', 'You\'re {need} sparkles away from the {item}. Keep going!'],
-  unlock: ['You just unlocked the {item}! It\'s waiting on your decor shelf.', 'New decor! The {item} is yours, {name}.']
+/* ---------- Fluff personalities: each player picks a coach style ---------- */
+const PERSONAS = {
+  sunny: { name: 'Sunny', tag: 'Cheerleader', desc: 'Bubbly, upbeat, celebrates everything' },
+  sarge: { name: 'Sarge', tag: 'Drill sergeant', desc: 'Tough love, short orders, big results' },
+  snooze: { name: 'Snooze', tag: 'Sleepy and sarcastic', desc: 'Dry jokes, secretly very proud of you' },
+  captain: { name: 'Captain', tag: 'Pirate', desc: 'Every mess is treasure to be hunted' }
 };
+const LINES = {
+  sunny: {
+    hello: ['Yay! Let\'s make this place sparkle together!'],
+    greet: ['Hi {name}! Which room are we tackling?'],
+    greetList: ['Hi {name}! The {room} list is still waiting for you.'],
+    greetNeedy: ['Hi {name}! The {room} could use some love.'],
+    startFirst: ['Prop me up where I can see the whole room, then get to work. I\'ll check whenever you step out of the way.'],
+    start: ['Let\'s make the {room} sparkle! I\'ll check when you step back.'],
+    done: ['Every chore is done! The room is sparkling. You earned {pts} sparkles this session.'],
+    nice: ['Nice work!'],
+    noChange: ['No changes spotted yet. Keep going!'],
+    work: ['You\'re really moving, {name}! Love the hustle.', 'Look at you go. This room doesn\'t stand a chance.', 'Nonstop! That\'s how sparkles get earned.', 'Great pace, {name}. Keep that energy going.', '{mins} of hard work so far. I see you!', 'The room is already looking different. Keep it up!'],
+    nudge: ['Still with me, {name}? Quick one: {task}. That\'s {tp} sparkles.', 'Let\'s keep rolling. Next up: {task}, worth {tp} sparkles.', 'Break\'s over! Easy win: {task}.', 'Ready for the next one? Try this: {task}.'],
+    nudgeAgain: ['Come on, {name}, just one more! {Task}. It only takes about {tm}.', 'Don\'t leave me hanging! {left} to go. Quickest one: {task}.', '{pts} sparkles so far. Let\'s make it more! Start here: {task}.'],
+    recap: ['{mins} in, {done} done, and {pts} sparkles earned. Nice!', 'Check-in: {done} down, {left} to go. You\'ve got this, {name}.', '{pts} sparkles this session so far. Keep stacking them!'],
+    half: ['Halfway there! The second half always goes faster.', 'That\'s half the list, {name}! Keep it up.'],
+    last: ['Just one chore left: {task}. Finish strong!', 'One to go! {Task}, and this room is done.'],
+    near: ['Only {need} sparkles until you unlock the {item}!', 'You\'re {need} sparkles away from the {item}. Keep going!'],
+    unlock: ['You just unlocked the {item}! It\'s waiting on your decor shelf.', 'New decor! The {item} is yours, {name}.'],
+    go: ['{dur} on the clock! Go, go, go!'],
+    target: ['Challenge time, {name}! I\'m putting {dur} on the clock. Can you {task} before it runs out? Beat it and the sparkles double!'],
+    blitz: ['Challenge time! {dur} on the clock. See how many chores you can knock out. {bonus} bonus sparkles each!'],
+    cHalf: ['Halfway! Keep it up!'], cMin: ['One minute left!'], c30: ['30 seconds left!'], c10: ['10 seconds! Hurry!'],
+    timeUp: ['Time! Let me see how you did.'],
+    targetWin: ['You beat the clock{spare}! Double sparkles: plus {bonus} bonus.'],
+    targetLose: ['So close! That one\'s not done yet. Finish it up, no timer this time.'],
+    cleared: ['You cleared the whole list{spare}! Plus {bonus} bonus sparkles!'],
+    some: ['Time! You finished {count}. That\'s {bonus} bonus sparkles!'],
+    none: ['Time! Nothing finished this round, but the next one is yours.'],
+    stopped: ['Challenge stopped. No worries!']
+  },
+  sarge: {
+    hello: ['Listen up, recruit! That room is not going to clean itself!'],
+    greet: ['Morning, recruit {name}! Pick a room. We move out on your command.'],
+    greetList: ['Recruit {name}! Your {room} mission is still open. Get back out there!'],
+    greetNeedy: ['Recruit {name}, the {room} is a disaster zone. Time to deploy.'],
+    startFirst: ['Set me where I can see the whole battlefield, recruit. Step out of the way and I\'ll inspect your work.'],
+    start: ['The {room} is your mission, recruit. Move out! I inspect when you step back.'],
+    done: ['Mission complete! Every chore done. {pts} sparkles earned. Outstanding work, recruit!'],
+    nice: ['Good work, recruit!'],
+    noChange: ['I don\'t see progress yet, recruit. Hustle!'],
+    work: ['That\'s the hustle I want to see, {name}!', 'Keep moving, recruit! No slowing down now!', 'Now we\'re talking. That is how a soldier cleans!', '{mins} of hard work. I am impressed, recruit!', 'Don\'t stop now, {name}! Momentum is everything!'],
+    nudge: ['Recruit {name}! Why are we standing still? {Task}, now!', 'On your feet! Next target: {task}. {tp} sparkles!', 'Break time is over, recruit. Go take care of {task}.', 'Eyes up, {name}. Your next mission: {task}.'],
+    nudgeAgain: ['I said move, recruit! {Task}. That\'s about {tm} of work!', '{left} still standing, recruit. Knock out {task}!', 'Only {pts} sparkles? You can do better, {name}. Hit {task}!'],
+    recap: ['Status report: {mins} in, {done} done, {pts} sparkles. Keep pushing!', 'Progress check, recruit: {done} down, {left} to go. Move!', '{pts} sparkles banked. I want more, {name}!'],
+    half: ['Halfway there, recruit! No slacking on the back half!', 'Half the mission done, {name}. Push through!'],
+    last: ['One target left, recruit: {task}. Finish the mission!', 'Last one, {name}! {Task}. Bring it home!'],
+    near: ['{need} more sparkles and the {item} is yours, recruit. Push!', 'You\'re {need} sparkles from the {item}. Do not quit now!'],
+    unlock: ['Medal earned! The {item} is unlocked, recruit!', 'Promotion! You just unlocked the {item}, {name}!'],
+    go: ['{dur} on the clock, recruit! Move, move, move!'],
+    target: ['Drill time, {name}! {dur} on the clock. Can you {task} before it runs out? Beat it and your sparkles double!'],
+    blitz: ['Speed drill! {dur} on the clock. Knock out as many chores as you can, recruit. {bonus} bonus sparkles each!'],
+    cHalf: ['Halfway, recruit! Faster!'], cMin: ['One minute left! Move it!'], c30: ['30 seconds, recruit! Push!'], c10: ['10 seconds! Go go go!'],
+    timeUp: ['Time! Hands up. Inspection.'],
+    targetWin: ['Mission accomplished{spare}! Double sparkles: plus {bonus} bonus. Outstanding!'],
+    targetLose: ['Not this time, recruit. Finish that chore anyway. A soldier finishes the job.'],
+    cleared: ['Whole list cleared{spare}! Plus {bonus} bonus sparkles. That\'s how it\'s done!'],
+    some: ['Time! You took down {count}. {bonus} bonus sparkles. Good work, recruit!'],
+    none: ['Time! Nothing finished. We train harder next round, recruit.'],
+    stopped: ['Drill canceled. At ease, recruit.']
+  },
+  snooze: {
+    hello: ['Oh. You want to clean? ...Fine. I\'m proud of you. Probably.'],
+    greet: ['Oh, hi {name}. I was napping. Which room are we pretending to care about?'],
+    greetList: ['Hey {name}. The {room} list is still there. I checked. Twice. From bed.'],
+    greetNeedy: ['{name}, the {room} looks like I feel. Just saying.'],
+    startFirst: ['Put me somewhere I can see the room. I\'ll watch. Lying down. When you step away, I\'ll look.'],
+    start: ['Okay. The {room}. You clean, I\'ll supervise from this very comfy spot.'],
+    done: ['Every chore is done. The room sparkles. {pts} sparkles. I\'m... genuinely impressed. Don\'t tell anyone.'],
+    nice: ['Huh. Nice.'],
+    noChange: ['Looks the same to me. Maybe it\'s my eyes. Probably not.'],
+    work: ['Wow, {name}. All that moving. Exhausting to watch. Keep it up.', 'You\'re really doing this. I\'m almost awake now.', '{mins} of cleaning. I\'ve napped less than that. Respect.', 'Look at you, being productive. Very annoying. Very cool.', 'Don\'t mind me, just quietly cheering. Very quietly.'],
+    nudge: ['Taking a nap too, {name}? Same. But {task} is right there. {tp} sparkles.', 'Psst. {Task}. It\'s easy. Even I could do it. I won\'t, but I could.', 'Break time? I approve. But {task} won\'t do itself. Sadly.', 'Hey. {Task}. Just saying. No pressure. Some pressure.'],
+    nudgeAgain: ['{name}, I\'m the sleepy one here. {Task}. About {tm}. Go on.', '{left} left. {Task} is the quickest. I believe in you, ish.', '{pts} sparkles so far. More would be nice. {Task}, maybe?'],
+    recap: ['Update: {mins} in, {done} done, {pts} sparkles. I\'m still lying down, but proud.', '{done} down, {left} to go. Not bad, {name}. Not bad at all.', '{pts} sparkles. That\'s more than I\'ve ever earned. Which is zero.'],
+    half: ['Halfway. That\'s about as far as I usually get. You keep going.', 'Half done, {name}. The fun half. Or the other half. Whatever.'],
+    last: ['One left: {task}. Then we can all nap.', 'Last one. {Task}. Then I\'m going back to sleep. You too, if you want.'],
+    near: ['{need} sparkles until the {item}. I\'d want it. If I wanted things.', 'Only {need} more for the {item}. That\'s like, a couple chores. Easy.'],
+    unlock: ['You unlocked the {item}. I\'m going to sleep on it. Literally.', 'New decor: the {item}. Okay, that\'s actually cool, {name}.'],
+    go: ['{dur} on the clock. Go. I\'ll watch.'],
+    target: ['Ugh, fine, challenge time, {name}. {dur} on the clock. Can you {task} before it runs out? Beat it and your sparkles double. Wow.'],
+    blitz: ['Surprise challenge. {dur} on the clock. Do as many chores as you can. {bonus} bonus sparkles each. I\'ll be here. Resting.'],
+    cHalf: ['Halfway. Still going? Impressive.'], cMin: ['One minute left. Not that I\'m counting.'], c30: ['30 seconds. Maybe hurry. Or don\'t. Do though.'], c10: ['10 seconds! Okay, even I\'m excited!'],
+    timeUp: ['Time. Let me open one eye and look.'],
+    targetWin: ['You beat the clock{spare}. Double sparkles, plus {bonus}. I\'m awake now. Wow.'],
+    targetLose: ['Didn\'t make it. That\'s fine. Naps are also a kind of victory.'],
+    cleared: ['You cleared the entire list{spare}. Plus {bonus} bonus sparkles. Who are you?'],
+    some: ['Time. You finished {count}. That\'s {bonus} bonus sparkles. Not bad.'],
+    none: ['Time. Nothing finished. Honestly, relatable.'],
+    stopped: ['Challenge canceled. Great. Nap time.']
+  },
+  captain: {
+    hello: ['Arr! Let\'s hunt down every scrap of mess, matey!'],
+    greet: ['Ahoy, {name}! Which room be needin\' a good swabbin\'?'],
+    greetList: ['Ahoy, {name}! The {room} still has treasure to plunder!'],
+    greetNeedy: ['Shiver me timbers, {name}! The {room} be a shipwreck!'],
+    startFirst: ['Prop me up in the crow\'s nest where I can see the whole deck. Step away and I\'ll check yer haul.'],
+    start: ['Set sail for the {room}, matey! I\'ll inspect the deck when ye step back.'],
+    done: ['The deck be spotless! Every chore done and {pts} sparkles of treasure. Fine work, matey!'],
+    nice: ['Arr, fine work!'],
+    noChange: ['Nothin\' new on deck yet, matey. Keep swabbin\'!'],
+    work: ['Ye swab like a true pirate, {name}!', 'Hoist the mop! This deck be lookin\' better already!', '{mins} of hard sailin\'. Arr, I\'m proud!', 'Full sails ahead, {name}! Keep that pace!', 'No landlubber cleans like that. Keep goin\'!'],
+    nudge: ['Ahoy, {name}! Dropped anchor? There be treasure in {task}. {tp} sparkles!', 'Back to work, matey! Next plunder: {task}.', 'Rest yer sea legs later. {Task} awaits!', 'X marks the spot: {task}!'],
+    nudgeAgain: ['Arr, {name}! Don\'t make me walk ye off the plank! {Task}, about {tm}!', '{left} still on deck! Quickest treasure: {task}.', 'Only {pts} sparkles in the chest! Fill it up with {task}!'],
+    recap: ['Captain\'s log: {mins} at sea, {done} done, {pts} sparkles in the chest!', 'Ahoy! {done} down, {left} to go. Steady as she goes, {name}!', '{pts} sparkles of booty so far. Arr, keep plunderin\'!'],
+    half: ['Halfway across the sea, matey! Land ho soon!', 'Half the treasure found, {name}! Keep huntin\'!'],
+    last: ['One treasure left: {task}. Claim it, matey!', 'Last plunder, {name}! {Task}, and the deck be clear!'],
+    near: ['Only {need} more sparkles and the {item} be yers!', 'Ye be {need} sparkles from the {item}, matey. Keep sailin\'!'],
+    unlock: ['Treasure found! The {item} be unlocked, matey!', 'Arr! The {item} joins yer collection, {name}!'],
+    go: ['{dur} on the clock! Hoist the sails!'],
+    target: ['Treasure hunt, {name}! {dur} on the clock. Can ye {task} before time runs out? Win and yer sparkles double!'],
+    blitz: ['All hands on deck! {dur} on the clock. Clear as many chores as ye can. {bonus} bonus sparkles each!'],
+    cHalf: ['Halfway, matey! Keep rowin\'!'], cMin: ['One minute left on the hourglass!'], c30: ['30 seconds! Full speed ahead!'], c10: ['10 seconds! Swab faster!'],
+    timeUp: ['Time! Let\'s see yer haul, matey.'],
+    targetWin: ['Ye beat the clock{spare}! Double treasure: plus {bonus} bonus sparkles!'],
+    targetLose: ['The treasure slipped away! Finish that chore anyway, matey.'],
+    cleared: ['Ye cleared the whole deck{spare}! Plus {bonus} bonus sparkles. Legendary!'],
+    some: ['Time! Ye plundered {count}. That be {bonus} bonus sparkles!'],
+    none: ['Time! No treasure this voyage, but the next one be yers.'],
+    stopped: ['Treasure hunt called off. Drop anchor, matey.']
+  }
+};
+function personaId(p = player()) { return p && PERSONAS[p.persona] ? p.persona : 'sunny'; }
+const lastLine = {};
+function line(key, vars = {}) {
+  const pool = (LINES[personaId()] || {})[key] || LINES.sunny[key] || [''];
+  let i = Math.floor(Math.random() * pool.length);
+  if (pool.length > 1 && i === lastLine[key]) i = (i + 1) % pool.length;
+  lastLine[key] = i;
+  const s = pool[i].replace(/\{(\w+)\}/g, (_, k) => vars[k] ?? '');
+  return s.charAt(0).toUpperCase() + s.slice(1);
+}
 const PEP_TIMING = {
   light: { gap: 45000, idle: 70000, work: 35000, recap: 180000, challengeGap: 300000 },
   chatty: { gap: 25000, idle: 40000, work: 20000, recap: 120000, challengeGap: 180000 }
@@ -1360,16 +1741,8 @@ function pepVars() {
   };
 }
 function pepSay(kind, extra = {}) {
-  const pool = PEP_LINES[kind];
-  C.pepLast = C.pepLast || {};
-  let i = Math.floor(Math.random() * pool.length);
-  if (pool.length > 1 && i === C.pepLast[kind]) i = (i + 1) % pool.length;
-  C.pepLast[kind] = i;
-  const vars = { ...pepVars(), ...extra };
-  let line = pool[i].replace(/\{(\w+)\}/g, (_, k) => vars[k] ?? '');
-  line = line.charAt(0).toUpperCase() + line.slice(1);
   C.lastPepAt = Date.now();
-  coachLine(line);
+  coachLine(line(kind, { ...pepVars(), ...extra }));
 }
 function pepTick() {
   const mode = S.settings.pep;
@@ -1449,7 +1822,7 @@ async function sendAsk(question, taskId) {
   try {
     const image = await askImage(roomId);
     const open = sess ? sess.tasks.filter((x) => !x.done && (!t || x.id !== t.id)).map((x) => x.title) : [];
-    const res = await api.ask({ image, question, task: t ? { title: t.title, zone: t.zone } : null, tasks: open });
+    const res = await api.ask({ image, question, task: t ? { title: t.title, zone: t.zone } : null, tasks: open, persona: personaId() });
     if (!$('#askOut')) return;
     $('#askOut').innerHTML = `<div class="speaker ask-answer">${fluffSVG(res.found ? 'happy' : '')}<div class="dialog"><span class="tag">Fluff</span>${esc(res.answer)}</div></div>
       ${t && !res.found ? `<div class="row"><button class="btn" data-act="ask-remove" data-id="${t.id}">Remove this chore</button><button class="btn" data-act="ask-done" data-id="${t.id}">It's already done</button></div>` : ''}
@@ -1513,7 +1886,7 @@ function startChallenge(kind, sec, taskId = null, intro = '') {
   $('#chTime').textContent = clockText(sec * 1000);
   $('#chBtn').textContent = 'Stop';
   unlockAudio(); chime();
-  coachLine(intro || `${durWords(sec)} on the clock! Go, go, go!`);
+  coachLine(intro || line('go', { dur: durWords(sec) }));
   clearInterval(CH.timer);
   CH.timer = setInterval(challengeTick, 250);
 }
@@ -1523,16 +1896,16 @@ function challengeTick() {
   $('#chTime').textContent = clockText(left);
   $('#chBanner').classList.toggle('hurry', left <= 10000);
   const callouts = [
-    ['half', CH.dur >= 90 && left <= CH.dur * 500, 'Halfway! Keep it up!'],
-    ['min', CH.dur >= 180 && left <= 60000, 'One minute left!'],
-    ['30', CH.dur >= 60 && left <= 30000, '30 seconds left!'],
-    ['10', CH.dur >= 25 && left <= 10000, '10 seconds! Hurry!']
+    ['half', CH.dur >= 90 && left <= CH.dur * 500, 'cHalf'],
+    ['min', CH.dur >= 180 && left <= 60000, 'cMin'],
+    ['30', CH.dur >= 60 && left <= 30000, 'c30'],
+    ['10', CH.dur >= 25 && left <= 10000, 'c10']
   ];
-  for (const [key, due, line] of callouts) {
+  for (const [key, due, lineKey] of callouts) {
     if (due && !CH.said[key]) {
       // mark all earlier callouts as said so they never stack up
       for (const [k] of callouts) { CH.said[k] = true; if (k === key) break; }
-      coachLine(line);
+      coachLine(line(lineKey));
       break;
     }
   }
@@ -1552,7 +1925,7 @@ async function finishChallenge(reason) {
   const endedAt = Date.now();
   if (reason === 'time') {
     $('#chTime').textContent = '0:00';
-    coachLine('Time! Let me see how you did.');
+    coachLine(line('timeUp'));
     chime();
     for (let i = 0; i < 40 && C.checking; i++) await wait(500);
     if (sess.tasks.some((t) => !t.done)) await runCheck(true, { silent: true });
@@ -1561,22 +1934,23 @@ async function finishChallenge(reason) {
   const done = sess.tasks.filter((t) => t.done && t.doneAt >= CH.start);
   const target = CH.taskId && sess.tasks.find((t) => t.id === CH.taskId);
   const spare = Math.max(0, Math.round((CH.end - endedAt) / 1000));
-  let bonus = 0, line;
+  let bonus = 0, result;
+  const spareText = spare ? ` with ${plural(spare, 'second')} to spare` : '';
   if (CH.kind === 'target') {
     if (target && target.done && target.doneAt >= CH.start) {
       bonus = target.points;
-      line = `You beat the clock${spare ? ` with ${plural(spare, 'second')} to spare` : ''}! Double sparkles: plus ${bonus} bonus.`;
-    } else line = 'So close! That one\'s not done yet. Finish it up, no timer this time.';
+      result = line('targetWin', { spare: spareText, bonus });
+    } else result = line('targetLose');
   } else {
     bonus = done.length * BLITZ_BONUS;
-    if (reason === 'cleared') line = `You cleared the whole list${spare ? ` with ${plural(spare, 'second')} to spare` : ''}! Plus ${bonus} bonus sparkles!`;
-    else if (done.length) line = `Time! You finished ${plural(done.length, 'chore')}. That's ${bonus} bonus sparkles!`;
-    else line = 'Time! Nothing finished this round, but the next one is yours.';
+    if (reason === 'cleared') result = line('cleared', { spare: spareText, bonus });
+    else if (done.length) result = line('some', { count: plural(done.length, 'chore'), bonus });
+    else result = line('none');
   }
   C.challengeEndedAt = Date.now();
   if (bonus) { C.pts += awardBonus(C.roomId, bonus, CH.kind === 'target' ? 'Beat the clock bonus' : 'Challenge bonus'); pop(`+${bonus} ✦`); chime(); coachFluff(true); }
   resetChallenge();
-  setTimeout(() => { if (C.el) coachLine(line); }, reason === 'time' ? 300 : 1500);
+  setTimeout(() => { if (C.el) coachLine(result); }, reason === 'time' ? 300 : 1500);
   C.lastPepAt = Date.now();
   renderCoachTasks();
 }
@@ -1595,10 +1969,10 @@ function surpriseChallenge() {
     const t = quick[Math.floor(Math.random() * quick.length)];
     const sec = clamp(Math.round(((t.minutes || 1) * 60 * 0.75) / 15) * 15, 30, 120);
     const name = t.title.replace(/[.!]$/, '').replace(/^\w/, (c) => c.toLowerCase());
-    startChallenge('target', sec, t.id, `Challenge time, ${v.name}! I'm putting ${durWords(sec)} on the clock. Can you ${name} before it runs out? Beat it and the sparkles double!`);
+    startChallenge('target', sec, t.id, line('target', { name: v.name, dur: durWords(sec), task: name }));
   } else {
     const sec = open.length >= 4 ? 120 : 60;
-    startChallenge('blitz', sec, null, `Challenge time! ${durWords(sec)} on the clock. See how many chores you can knock out. ${BLITZ_BONUS} bonus sparkles each!`);
+    startChallenge('blitz', sec, null, line('blitz', { dur: durWords(sec), bonus: BLITZ_BONUS }));
   }
 }
 async function startCoach(roomId) {
@@ -1629,7 +2003,7 @@ async function startCoach(roomId) {
   C.el = el; C.video = el.querySelector('video');
   renderCoachTasks();
   const firstTime = !S.coachTipSeen;
-  coachLine(firstTime ? 'Prop me up where I can see the whole room, then get to work. I\'ll check whenever you step out of the way.' : `Let's make the ${room.name.toLowerCase()} sparkle! I'll check when you step back.`);
+  coachLine(firstTime ? line('startFirst') : line('start', { room: room.name.toLowerCase() }));
   S.coachTipSeen = true; save();
   try {
     await openCamera(S.settings.camera);
@@ -1801,11 +2175,11 @@ async function runCheck(manual, opts = {}) {
     if (r.count) {
       C.pts += r.pts;
       pop(`+${r.pts} ✦`); chime(); coachFluff(true);
-      coachLine(res.feedback || 'Nice work!');
+      coachLine(res.feedback || line('nice'));
       pepAfterAward();
       challengeOnAward();
     } else if (manual) {
-      coachLine(res.feedback || 'No changes spotted yet. Keep going!');
+      coachLine(res.feedback || line('noChange'));
     } else if (res.feedback) {
       coachLine(res.feedback, false);
     }
@@ -1818,7 +2192,7 @@ async function runCheck(manual, opts = {}) {
 function coachDone() {
   coachFluff(true);
   const afterChallenge = Date.now() - (C.challengeEndedAt || 0) < 3000;
-  setTimeout(() => coachLine(`Every chore is done! The room is sparkling. You earned ${C.pts} sparkles this session.`), afterChallenge ? 6500 : 1200);
+  setTimeout(() => coachLine(line('done', { pts: C.pts })), afterChallenge ? 6500 : 1200);
   const row = C.el.querySelector('.bottom .row');
   row.innerHTML = '<button class="btn sun" data-act="coach-end">Finish</button>';
 }
@@ -1876,6 +2250,22 @@ document.addEventListener('click', (e) => {
     case 'coach-check': unlockAudio(); runCheck(true); break;
     case 'coach-flip': flipCamera(); break;
     case 'coach-area': editCoachArea(); break;
+    case 'sync-setup': runSyncSetup('auto'); break;
+    case 'sync-join': runSyncSetup('join'); break;
+    case 'sync-merge': runSyncSetup('merge'); break;
+    case 'sync-now': SY.backoff = 0; syncNow(); break;
+    case 'sync-off': stopSync(); break;
+    case 'pick-persona': {
+      const p = player();
+      if (!p || !PERSONAS[id]) break;
+      p.persona = id; save();
+      $('#personaGrid').innerHTML = personaCards();
+      const hi = LINES[id].hello[0];
+      $('#personaHello').textContent = `${PERSONAS[id].name}: “${hi}”`;
+      unlockAudio(); say(hi);
+      pushPrefs(); render();
+      break;
+    }
     case 'notify-on': enableReminders(); break;
     case 'notify-off': disableReminders(); break;
     case 'notify-test': {
@@ -1904,7 +2294,7 @@ document.addEventListener('click', (e) => {
       render();
       break;
     }
-    case 'ch-open': if (CH.active) { resetChallenge(); coachLine('Challenge stopped. No worries!', false); } else openChallengePicker(); break;
+    case 'ch-open': if (CH.active) { resetChallenge(); coachLine(line('stopped'), false); } else openChallengePicker(); break;
     case 'ch-start': closeSheet(); startChallenge('blitz', Number(a.dataset.sec)); break;
     case 'ch-start-custom': {
       const n = Number($('#chNum').value), unit = Number($('#chUnit').value);
@@ -1973,14 +2363,14 @@ document.addEventListener('click', (e) => {
     case 'add-player': {
       const name = $('#newPlayer').value.trim();
       if (!name) { $('#newPlayer').focus(); break; }
-      const p = { id: uid(), name, color: PLAYER_COLORS[S.players.length % PLAYER_COLORS.length], sparkles: 0 };
+      const p = { id: uid(), name, color: PLAYER_COLORS[S.players.length % PLAYER_COLORS.length], sparkles: 0, created: Date.now() };
       S.players.push(p); S.current = p.id; save(); closeSheet(); render();
       break;
     }
     case 'welcome-go': {
       const name = $('#wName').value.trim();
       if (!name) { $('#wName').focus(); break; }
-      const p = { id: uid(), name, color: PLAYER_COLORS[0], sparkles: 0 };
+      const p = { id: uid(), name, color: PLAYER_COLORS[0], sparkles: 0, created: Date.now() };
       S.players = [p]; S.current = p.id; save(); closeSheet(); render();
       break;
     }
@@ -2019,7 +2409,7 @@ document.addEventListener('click', (e) => {
     case 'save-room': {
       const name = $('#rName').value.trim();
       if (!name) { $('#rName').focus(); break; }
-      S.rooms.push({ id: uid(), name, emoji: $('#sheet').dataset.emo || '🏠', shine: 50, shineAt: Date.now() });
+      S.rooms.push({ id: uid(), name, emoji: $('#sheet').dataset.emo || '🏠', shine: 50, shineAt: Date.now(), created: Date.now() });
       save(); closeSheet(); render();
       break;
     }
@@ -2057,6 +2447,7 @@ if (navigator.serviceWorker) navigator.serviceWorker.addEventListener('message',
 if (S.notify.on && pushSupported() && Notification.permission !== 'granted') { S.notify.on = false; save(); }
 updateBadge();
 syncReminderState(true);
+if (SY.on) syncNow();
 if ('serviceWorker' in navigator && (location.protocol === 'https:' || location.hostname === 'localhost')) {
   navigator.serviceWorker.register('sw.js').catch(() => {});
 }

@@ -77,10 +77,28 @@ Fluff can send a daily nudge, a streak saver, a Sunday recap and surprise "Flash
 - Opening a Flash bonus notification doubles the sparkles for every chore finished in the next 30 minutes.
 - The app icon shows how many chores are left (iPhone lets you turn badges off under Settings > Notifications).
 
+## Fluff personalities
+
+In Settings, each person picks their own coach: **Sunny** (cheerleader), **Sarge** (drill sergeant), **Snooze** (sleepy and sarcastic) or **Captain** (pirate). The choice changes Fluff's look, everything Fluff says in Coach Mode and challenges, the tone of the AI's feedback and answers, and the wording of that phone's reminders.
+
+## Household sync
+
+Every phone connected to the same helper can share one household: rooms, chore lists, people, sparkles, the streak and the leaderboard.
+
+1. In Cloudflare, go to **Storage & Databases > D1 SQLite Database**, choose **Create database**, and name it `sparkle-db`.
+2. Open the `sparkle-helper` Worker, go to **Bindings > Add binding > D1 database**, set the variable name to `SPARKLE_DB`, pick `sparkle-db`, and save.
+3. On the first phone: Settings > Household sync > **Set up household sync**. This starts the household with that phone's data.
+4. On each other phone: the same button, then **Join the household** (use the household's data) or **Combine with this phone's data** (add this phone's people, rooms and history; people with the same name become one person).
+
+- Phones check for changes every few seconds while the app is open, and send their own changes right away.
+- Sparkle totals, the streak and decor unlocks are worked out from the shared history of sparkle events, so two people scoring at the same moment never overwrite each other. If two phones check off the same chore at once, it counts once.
+- Photos, voice settings, reminders, the camera choice and Coach Mode focus areas stay on each phone.
+- The helper stores the household in your own D1 database. Nothing is shared outside your Cloudflare account.
+
 ## Privacy
 
 - Photos go to your helper and on to Claude for that one request. Neither the app nor the helper saves them.
-- Lists, points, and players are stored only in the phone's local storage.
+- Lists, points, and players are stored in the phone's local storage, and in your own D1 database if household sync is on.
 - The before photo stays in memory while the app is open, so "Scan again" is needed to see task areas after relaunching.
 
 ## Updating the app
