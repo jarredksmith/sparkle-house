@@ -334,6 +334,13 @@ const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '
 const uid = () => Math.random().toString(36).slice(2, 9);
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
 const reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+/* Native iPhone app (Capacitor wrapper in ios-app/). The same page runs in both places;
+   inside the app, a few things use native plugins instead of web APIs. */
+const NATIVE = !!(window.Capacitor && window.Capacitor.isNativePlatform && window.Capacitor.isNativePlatform());
+const NP = NATIVE ? (window.Capacitor.Plugins || {}) : {};
+function haptic(type) {
+  try { if (NP.Haptics) (type ? NP.Haptics.notification({ type }) : NP.Haptics.impact({ style: 'LIGHT' })).catch(() => {}); } catch (e) { /* ignore */ }
+}
 const dayKey = (t = Date.now()) => { const d = new Date(t); return d.getFullYear() + '-' + (d.getMonth() + 1) + '-' + d.getDate(); };
 
 const PLAYER_COLORS = ['#FF8FA3', '#5BB8EA', '#F2B321', '#A98BEB', '#4FBF7E', '#FF9B5A'];
@@ -508,6 +515,7 @@ function unlockAudio() {
   try { actx = actx || new (window.AudioContext || window.webkitAudioContext)(); actx.resume(); } catch (e) { actx = null; }
 }
 function chime() {
+  haptic('SUCCESS');
   if (!S.settings.sound || !actx) return;
   const t = actx.currentTime;
   [[784, 0], [1175, 0.09], [1568, 0.18]].forEach(([f, dt]) => {
@@ -986,7 +994,11 @@ function openSheet(html, onMount) {
   const f = w.querySelector('input,button');
   if (f) setTimeout(() => f.focus(), 50);
 }
-function closeSheet() { const s = $('#sheet'); if (s) s.remove(); if (askRec) { try { askRec.abort(); } catch (e) { /* ignore */ } askRec = null; } }
+function closeSheet() {
+  const s = $('#sheet'); if (s) s.remove();
+  if (askRec) { try { askRec.abort(); } catch (e) { /* ignore */ } askRec = null; }
+  if (NMIC.on) NP.SpeechRecognition.stop().catch(() => {});
+}
 
 function openWelcome() {
   openSheet(`
@@ -1008,7 +1020,7 @@ function settingsMeta(key) {
     case 'fluff': return `${PERSONAS[personaId()].name} · ${val('#sVoice', st.voice) ? 'talks out loud' : 'voice off'}`;
     case 'coach': { const pep = val('#sPep', st.pep); return `${pep === 'off' ? 'No pep talk' : pep === 'chatty' ? 'Chatty pep talk' : 'Light pep talk'} · checks every ${val('#sGap', st.minGap)} sec`; }
     case 'house': return `${SY.on ? (SY.error ? 'Sync problem' : 'Synced') : 'Not synced'} · ${S.players.length === 1 ? '1 person' : S.players.length + ' people'} · ${plural(S.rooms.length, 'room')}`;
-    case 'remind': return S.notify.on ? 'On' : 'Off';
+    case 'remind': return NATIVE ? 'Coming soon to the app' : S.notify.on ? 'On' : 'Off';
     case 'helper': return String(val('#sUrl', st.workerUrl)).trim() ? 'Set up' : 'Demo mode, not connected';
     case 'privacy': return 'Photos are never saved';
     default: return '';
@@ -1433,6 +1445,7 @@ function prefetchPushKey() {
 }
 function notifyHTML() {
   const n = S.notify;
+  if (NATIVE) return '<p style="font-weight:600;margin:0">Reminders are coming to the iPhone app in the next update. Until then, the Home Screen version of Sparkle House can still send them.</p>';
   if (!pushSupported() || (isIOS && !isStandalone())) return '<p class="field" style="font-weight:600">To get reminders on iPhone, add Sparkle House to your Home Screen (Share, then Add to Home Screen) and open it from there. Needs iOS 16.4 or later.</p>';
   if (!api.live) return '<p style="font-weight:600;margin:0">Connect your AI helper (in AI helper below) to turn on reminders.</p>';
   if (mem.pushKeyError && !n.on) return `<div class="status bad">${esc(mem.pushKeyError)}</div>`;
@@ -1885,7 +1898,7 @@ function openAsk(taskId = null) {
   openSheet(`<h2>Ask Fluff</h2>
     ${t ? `<p style="margin:0 0 8px;font-weight:700">About: ${esc(t.title)}</p>` : ''}
     <div class="ask-input"><input id="askQ" placeholder="${t ? 'I don\'t see it…' : 'Ask about the room…'}" maxlength="300" autocomplete="off">
-      ${SpeechRec ? `<button class="mic" data-act="ask-mic" aria-label="Speak your question">${MIC}</button>` : ''}
+      ${canMic() ? `<button class="mic" data-act="ask-mic" aria-label="Speak your question">${MIC}</button>` : ''}
       <button class="btn primary small" data-act="ask-send" data-id="${t ? t.id : ''}">Ask</button></div>
     <div class="ask-chips">${suggestions.map((q) => `<button data-act="ask-chip" data-id="${t ? t.id : ''}" data-q="${esc(q)}">${esc(q)}</button>`).join('')}</div>
     <div id="askOut"></div>`);
@@ -1923,7 +1936,40 @@ async function sendAsk(question, taskId) {
     if ($('#askOut')) $('#askOut').innerHTML = `<div class="status bad">${esc(e.message || 'Fluff couldn\'t answer that. Try again.')}</div>`;
   }
 }
+const canMic = () => !!(NP.SpeechRecognition || (!NATIVE && SpeechRec));
+/* In the iPhone app, Apple's speech recognizer comes through a native plugin.
+   Stops on its own after a short pause, then sends the question. */
+const NMIC = { on: false, handles: [], quiet: null };
+async function nativeMic(btn) {
+  const SR = NP.SpeechRecognition;
+  if (NMIC.on) { SR.stop().catch(() => {}); return; }
+  try {
+    const perm = await SR.requestPermissions();
+    if (perm.speechRecognition !== 'granted') { toast('Allow the microphone and speech recognition for Sparkle House in your iPhone Settings, or type your question.'); return; }
+    NMIC.on = true; btn.classList.add('on');
+    const finish = () => {
+      if (!NMIC.on) return;
+      NMIC.on = false; clearTimeout(NMIC.quiet); btn.classList.remove('on');
+      NMIC.handles.forEach((h) => h.remove()); NMIC.handles = [];
+      const q = $('#askQ'); const send = $('[data-act=ask-send]');
+      if (q && q.value.trim() && send) sendAsk(q.value, send.dataset.id || null);
+    };
+    const quietSoon = (ms) => { clearTimeout(NMIC.quiet); NMIC.quiet = setTimeout(() => SR.stop().catch(finish), ms); };
+    NMIC.handles = await Promise.all([
+      SR.addListener('partialResults', (e) => { const t = e.matches && e.matches[0]; const q = $('#askQ'); if (t && q) { q.value = t; quietSoon(1600); } }),
+      SR.addListener('listeningState', (e) => { if (e.state === 'stopped') finish(); }),
+      SR.addListener('error', () => finish())
+    ]);
+    quietSoon(8000); // nothing heard at all
+    await SR.start({ language: 'en-US', partialResults: true, popup: false });
+  } catch (e) {
+    NMIC.on = false; btn.classList.remove('on');
+    NMIC.handles.forEach((h) => h.remove()); NMIC.handles = [];
+    toast('Voice input isn\'t available. Type your question instead.');
+  }
+}
 function toggleMic(btn) {
+  if (NP.SpeechRecognition) { nativeMic(btn); return; }
   if (!SpeechRec) return;
   if (askRec) { askRec.stop(); return; }
   try {
@@ -2284,6 +2330,7 @@ function coachDone() {
   row.innerHTML = '<button class="btn sun" data-act="coach-end">Finish</button>';
 }
 async function wakeOn() {
+  if (NP.KeepAwake) { NP.KeepAwake.keepAwake().catch(() => {}); return; }
   try { if ('wakeLock' in navigator && !document.hidden) C.wake = await navigator.wakeLock.request('screen'); } catch (e) { /* not supported */ }
 }
 function stopCoach() {
@@ -2291,6 +2338,7 @@ function stopCoach() {
   clearInterval(C.loop); clearInterval(C.clock);
   if (C.stream) C.stream.getTracks().forEach((t) => t.stop());
   if (C.wake) { C.wake.release().catch(() => {}); C.wake = null; }
+  if (NP.KeepAwake) NP.KeepAwake.allowSleep().catch(() => {});
   if ('speechSynthesis' in window) speechSynthesis.cancel();
   if (C.el) C.el.remove();
   Object.assign(C, { el: null, stream: null, video: null, ctx: null });
@@ -2596,7 +2644,7 @@ if (S.notify.on && pushSupported() && Notification.permission !== 'granted') { S
 updateBadge();
 syncReminderState(true);
 if (SY.on) syncNow();
-if ('serviceWorker' in navigator && (location.protocol === 'https:' || location.hostname === 'localhost')) {
+if (!NATIVE && 'serviceWorker' in navigator && (location.protocol === 'https:' || location.hostname === 'localhost')) {
   navigator.serviceWorker.register('sw.js').catch(() => {});
 }
 </script>

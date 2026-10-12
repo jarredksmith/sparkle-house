@@ -1,0 +1,21 @@
+{
+  "name": "sparkle-house-ios",
+  "private": true,
+  "version": "1.0.0",
+  "description": "Native iPhone wrapper for Sparkle House (Capacitor). The app itself lives in ../index.html.",
+  "scripts": {
+    "copy-web": "node scripts/copy-web.mjs",
+    "sync": "node scripts/copy-web.mjs && npx cap sync ios"
+  },
+  "dependencies": {
+    "@capacitor-community/keep-awake": "^8.0.1",
+    "@capacitor/core": "^8.5.3",
+    "@capacitor/haptics": "^8.0.2",
+    "@capacitor/ios": "^8.5.3",
+    "@capacitor/status-bar": "^8.0.4",
+    "@capgo/capacitor-speech-recognition": "^8.4.1"
+  },
+  "devDependencies": {
+    "@capacitor/cli": "^8.5.3"
+  }
+}

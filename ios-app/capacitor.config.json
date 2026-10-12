@@ -1,0 +1,15 @@
+{
+  "appId": "com.jarredsmith.sparklehouse",
+  "appName": "Sparkle House",
+  "webDir": "www",
+  "backgroundColor": "#E6F5EA",
+  "ios": {
+    "contentInset": "never",
+    "backgroundColor": "#E6F5EA",
+    "scrollEnabled": true,
+    "limitsNavigationsToAppBoundDomains": false
+  },
+  "plugins": {
+    "StatusBar": { "style": "LIGHT", "overlaysWebView": true }
+  }
+}

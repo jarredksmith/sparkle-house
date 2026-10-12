@@ -4,7 +4,8 @@
 // Secrets / variables (set in the Cloudflare dashboard or with wrangler):
 //   ANTHROPIC_API_KEY  (secret, required)  your Claude API key
 //   APP_TOKEN          (secret, recommended) household passcode the app must send
-//   ALLOWED_ORIGINS    (variable, optional) e.g. "https://yourname.github.io"
+//   ALLOWED_ORIGINS    (variable, optional) e.g. "https://yourname.github.io,capacitor://localhost"
+//                      (capacitor://localhost is the iPhone app built from ios-app/)
 //   MODEL_ANALYZE      (variable, optional) default claude-sonnet-5-5
 //   MODEL_VERIFY       (variable, optional) default claude-haiku-5-5
 //   ELEVENLABS_API_KEY (secret, optional)  turns on Fluff's AI voice

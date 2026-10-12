@@ -97,6 +97,22 @@ Every phone connected to the same helper can share one household: rooms, chore l
 - Photos, voice settings, reminders, the camera choice and Coach Mode focus areas stay on each phone.
 - The helper stores the household in your own D1 database. Nothing is shared outside your Cloudflare account.
 
+## iPhone app (TestFlight)
+
+The `ios-app` folder wraps this same web app in a native iPhone app using Capacitor. The app bundles `index.html`, so there's still only one copy of the app to edit. Inside the app, Fluff talks even when the silent switch is on, the screen stays awake in Coach Mode, chores buzz when you finish them, and Ask Fluff uses Apple's speech recognition.
+
+GitHub builds it on a Mac every time `index.html`, `icons/` or `ios-app/` changes (see `.github/workflows/ios.yml`). Until the keys below are added, a build only checks that the app compiles. Once they're added, every build is signed and sent to TestFlight.
+
+1. In App Store Connect, create the app with bundle ID `com.jarredsmith.sparklehouse`.
+2. In App Store Connect, go to **Users and Access > Integrations > App Store Connect API**, create a **Team Key** with **Admin** access (Admin lets Xcode manage the signing certificates for you), and download the `.p8` file. Apple only lets you download it once.
+3. In this GitHub repo, go to **Settings > Secrets and variables > Actions** and add:
+   - Secrets: `ASC_KEY_ID` (the key's ID), `ASC_ISSUER_ID` (shown above the keys list), `ASC_KEY_P8` (open the .p8 file in a text editor and paste all of it)
+   - Variable: `APPLE_TEAM_ID` (your 10-character Team ID from the Apple Developer membership page)
+4. In GitHub, open **Actions > iPhone app > Run workflow**. When it finishes, the build appears in TestFlight after Apple processes it.
+5. In App Store Connect, open the app's **TestFlight** tab and add family members as testers. They install the TestFlight app, then Sparkle House.
+
+The helper's `ALLOWED_ORIGINS` must include `capacitor://localhost` so the app can reach it. Reminders don't work in the iPhone app yet; the Home Screen version still sends them.
+
 ## Privacy
 
 - Photos go to your helper and on to Claude for that one request. Neither the app nor the helper saves them.
@@ -110,4 +126,4 @@ After changing `index.html`, open `sw.js` and bump `VERSION` (for example `spark
 ## Next up
 
 - The 3D house: unlocked decor already tracks toward it.
-- Shared household sync, so points follow each person across phones.
+- Reminders in the iPhone app.
