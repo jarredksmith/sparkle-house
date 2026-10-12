@@ -22,6 +22,8 @@ A home-screen web app for chores. Snap a messy room, get a scored checklist, and
 
 Open that address in **Safari**, tap **Share**, then **Add to Home Screen**. It opens full screen like a regular app.
 
+Swipe sideways (either direction) to go back: from a room or Rewards to the house, or to close any pop-up, including Settings. Settings are grouped into sections (Fluff, Coach Mode, Household, Reminders, AI helper, Privacy) and save when you close them.
+
 The app starts in **demo mode**: the chore list is a sample, and Coach Mode checks off random chores. That's enough to try the whole flow before setting up the AI.
 
 ## 3. Set up the AI helper (Cloudflare Worker, free tier)

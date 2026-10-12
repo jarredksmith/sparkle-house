@@ -1,6 +1,6 @@
 // Sparkle House service worker: keeps the app shell available offline.
 // Bump VERSION whenever you change index.html so phones pick up the update.
-const VERSION = 'sparkle-v10';
+const VERSION = 'sparkle-v11';
 const SHELL = [
   './',
   './index.html',
