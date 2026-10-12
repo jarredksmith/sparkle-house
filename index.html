@@ -197,6 +197,9 @@ h1,h2,h3{font-family:var(--display);line-height:1.1;margin:0}
 .status.bad{color:#C2405E}
 
 /* toast + pops */
+.flash-bar{position:fixed;left:50%;transform:translateX(-50%);top:calc(var(--safe-t) + 8px);z-index:88;background:var(--sun);color:var(--ink);font-weight:800;border-radius:999px;padding:7px 16px;box-shadow:0 4px 0 #E2B321;white-space:nowrap;font-variant-numeric:tabular-nums}
+.app.has-flash{padding-top:calc(var(--safe-t) + 54px)}
+.app.has-flash ~ .toasts{top:calc(var(--safe-t) + 58px)}
 .toasts{position:fixed;top:calc(var(--safe-t) + 12px);left:0;right:0;display:flex;flex-direction:column;align-items:center;gap:8px;z-index:90;pointer-events:none}
 .toast{background:var(--ink);color:#fff;font-weight:800;border-radius:16px;padding:10px 16px;max-width:92vw;animation:tin .25s ease-out;box-shadow:0 4px 0 rgba(0,0,0,.15)}
 .toast.win{background:var(--sun);color:var(--ink)}
@@ -336,7 +339,10 @@ const fresh = () => ({
   unlocked: [],
   streak: { count: 0, last: '' },
   history: [],
-  coachTipSeen: false
+  coachTipSeen: false,
+  deviceId: '',
+  notify: { on: false, daily: '17:30', streak: true, weekly: true, flash: true, quietStart: '21:00', quietEnd: '08:00' },
+  flashUntil: 0
 });
 function load() {
   const base = fresh();
@@ -345,13 +351,17 @@ function load() {
     if (raw) {
       const s = Object.assign(base, JSON.parse(raw));
       s.settings = Object.assign(fresh().settings, s.settings || {});
+      s.notify = Object.assign(fresh().notify, s.notify || {});
       return s;
     }
   } catch (e) { /* storage blocked */ }
   return base;
 }
 let S = load();
-function save() { try { localStorage.setItem(STORE_KEY, JSON.stringify(S)); } catch (e) { /* ignore */ } }
+function save() {
+  try { localStorage.setItem(STORE_KEY, JSON.stringify(S)); } catch (e) { /* ignore */ }
+  if (typeof afterSave === 'function') afterSave();
+}
 
 // Photos live only in memory, never in storage.
 const mem = { before: {}, selected: null, lastFeedback: {} };
@@ -569,6 +579,11 @@ function awardTask(roomId, task, how) {
   const total = sess.tasks.reduce((a, t) => a + t.points, 0) || 1;
   setShine(room, shineOf(room) + (100 * task.points) / total);
   S.history.unshift({ ts: task.doneAt, room: room.name, title: task.title, pts: task.points, player: p.id, task: task.id });
+  if (Date.now() < (S.flashUntil || 0)) {
+    task.flash = true;
+    p.sparkles += task.points; S.household.lifetime += task.points; gained += task.points;
+    S.history.unshift({ ts: task.doneAt, room: room.name, title: 'Flash bonus', pts: task.points, player: p.id, task: task.id + ':flash' });
+  }
   if (sess.tasks.every((t) => t.done) && !sess.sweep) {
     sess.sweep = true;
     p.sparkles += 10; S.household.lifetime += 10; gained += 10;
@@ -596,10 +611,12 @@ function undoTask(roomId, task) {
   const room = roomById(roomId);
   const p = S.players.find((x) => x.id === task.by) || player();
   const total = sess.tasks.reduce((a, t) => a + t.points, 0) || 1;
-  p.sparkles = Math.max(0, p.sparkles - task.points);
-  S.household.lifetime = Math.max(0, S.household.lifetime - task.points);
+  const back = task.points * (task.flash ? 2 : 1);
+  p.sparkles = Math.max(0, p.sparkles - back);
+  S.household.lifetime = Math.max(0, S.household.lifetime - back);
   setShine(room, shineOf(room) - (100 * task.points) / total);
-  S.history = S.history.filter((h) => h.task !== task.id);
+  S.history = S.history.filter((h) => h.task !== task.id && h.task !== task.id + ':flash');
+  delete task.flash;
   if (sess.sweep) {
     sess.sweep = false;
     const sp = S.players.find((x) => S.history.some((h) => h.task === 'sweep' && h.player === x.id)) || p;
@@ -709,6 +726,13 @@ const api = {
     }
     return this.call('/verify', { before: beforeB64 || null, after: afterB64, tasks });
   },
+  async pushKey() {
+    const r = await fetch(this.base() + '/push/key', { headers: { 'X-App-Token': S.settings.token || '' } });
+    const j = await r.json().catch(() => ({}));
+    if (!r.ok) throw new Error(j.error || `Error ${r.status}`);
+    return j;
+  },
+  push(path, body) { return this.call(path, body); },
   async ask(body) {
     if (!this.live) {
       await wait(900);
@@ -920,6 +944,8 @@ function openSettings() {
     <label class="field">Fluff's voice<select id="sVoiceId">${voiceOptions()}</select><small id="voiceHint">${voiceHint()}</small></label>
     <button class="btn small" data-act="test-voice">Play sample</button>
     <audio id="previewAudio" preload="none"></audio>
+    <h3>Reminders</h3>
+    <div id="notifyBox">${notifyHTML()}</div>
     <h3>Rooms</h3>
     <ul class="plist">${S.rooms.map((r) => `<li><span style="font-size:24px">${esc(r.emoji)}</span><span style="flex:1">${esc(r.name)}</span><button class="btn text" data-act="del-room" data-id="${r.id}">Remove</button></li>`).join('')}</ul>
     <h3>Privacy</h3>
@@ -927,6 +953,7 @@ function openSettings() {
     <button class="btn text" data-act="reset" style="color:#C2405E">Reset everything</button>
     <div class="row" style="margin-top:16px"><button class="btn primary" data-act="save-settings">Save settings</button></div>`,
   (w) => {
+    prefetchPushKey();
     w.querySelector('#sGap').addEventListener('input', (e) => { w.querySelector('#gapVal').textContent = e.target.value; });
     if (api.live) { AI.loaded = false; refreshVoiceField(); loadAiVoices().then(refreshVoiceField); }
   });
@@ -1033,6 +1060,147 @@ function openAreaEditor({ src, w, h, mirror = false, initial = null, tip }) {
     });
     draw();
   });
+}
+
+/* ---------- Reminders: push notifications sent by the AI helper on a schedule ---------- */
+const pushSupported = () => 'serviceWorker' in navigator && 'PushManager' in window && 'Notification' in window;
+const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+const isStandalone = () => window.matchMedia('(display-mode: standalone)').matches || navigator.standalone === true;
+const localTz = () => { try { return Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC'; } catch (e) { return 'UTC'; } };
+const isoDay = (t) => { const d = new Date(t); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`; };
+function b64uBytes(str) { let s = str.replace(/-/g, '+').replace(/_/g, '/'); while (s.length % 4) s += '='; const bin = atob(s); return Uint8Array.from(bin, (c) => c.charCodeAt(0)); }
+function prefetchPushKey() {
+  if (!mem.vapidKey && api.live && pushSupported()) api.pushKey().then((r) => { mem.vapidKey = r.key; }).catch((e) => { mem.pushKeyError = e.message; refreshNotifyBox(); });
+}
+function notifyHTML() {
+  const n = S.notify;
+  if (!pushSupported() || (isIOS && !isStandalone())) return '<p class="field" style="font-weight:600">To get reminders on iPhone, add Sparkle House to your Home Screen (Share, then Add to Home Screen) and open it from there. Needs iOS 16.4 or later.</p>';
+  if (!api.live) return '<p style="font-weight:600;margin:0">Connect your AI helper above to turn on reminders.</p>';
+  if (mem.pushKeyError && !n.on) return `<div class="status bad">${esc(mem.pushKeyError)}</div>`;
+  if (Notification.permission === 'denied') return '<p style="font-weight:600;margin:0">Notifications are blocked for Sparkle House. Turn them on in your phone\'s Settings, under Notifications, then come back here.</p>';
+  if (!n.on) return `<p style="font-weight:600;margin:0 0 10px">Fluff can nudge you to clean, save your streak, and surprise you with double-sparkle bonuses.</p>
+    <button class="btn primary" data-act="notify-on" style="width:100%">Turn on reminders</button>`;
+  const tog = (id, on, label, hint) => `<label class="toggle"><span>${label}${hint ? `<br><small style="font-weight:600;color:var(--ink-soft)">${hint}</small>` : ''}</span><input id="${id}" type="checkbox" ${on ? 'checked' : ''}></label>`;
+  return `${tog('nDailyOn', !!n.daily, 'Daily nudge', 'Skipped on days you\'ve already cleaned')}
+    <label class="field" style="margin:-4px 0 6px">Nudge time<input id="nDaily" type="time" value="${esc(n.daily || '17:30')}"></label>
+    ${tog('nStreak', n.streak, 'Streak saver', '7:30 PM, only when a streak is about to end')}
+    ${tog('nWeekly', n.weekly, 'Weekly recap', 'Sunday evening')}
+    ${tog('nFlash', n.flash, 'Flash bonuses', 'Surprise double-sparkle windows, about twice a week')}
+    <div class="field">Quiet hours<div class="custom-time"><input id="nQs" type="time" value="${esc(n.quietStart)}" aria-label="Quiet hours start" style="width:auto;flex:1"><span>to</span><input id="nQe" type="time" value="${esc(n.quietEnd)}" aria-label="Quiet hours end" style="width:auto;flex:1"></div><small>No reminders during these hours.</small></div>
+    <div class="row"><button class="btn small" data-act="notify-test">Send a test</button><button class="btn small text" data-act="notify-off">Turn off reminders</button></div>`;
+}
+function refreshNotifyBox() { const b = $('#notifyBox'); if (b) b.innerHTML = notifyHTML(); }
+function readNotifyForm() {
+  const n = S.notify;
+  n.daily = $('#nDailyOn').checked ? ($('#nDaily').value || '17:30') : null;
+  n.streak = $('#nStreak').checked; n.weekly = $('#nWeekly').checked; n.flash = $('#nFlash').checked;
+  n.quietStart = $('#nQs').value || '21:00'; n.quietEnd = $('#nQe').value || '08:00';
+}
+const notifyPrefs = () => { const { on, ...p } = S.notify; return p; };
+function pushSummary() {
+  const p = player();
+  const open = S.rooms.map((r) => ({ r, n: S.sessions[r.id] ? S.sessions[r.id].tasks.filter((t) => !t.done).length : 0 })).filter((x) => x.n).sort((a, b) => b.n - a.n);
+  const needy = [...S.rooms].sort((a, b) => shineOf(a) - shineOf(b))[0];
+  const wk = S.history.filter((h) => h.ts >= Date.now() - 7 * 864e5);
+  const byP = {}; wk.forEach((h) => { byP[h.player] = (byP[h.player] || 0) + h.pts; });
+  const leadId = Object.keys(byP).sort((a, b) => byP[b] - byP[a])[0];
+  const lead = S.players.length > 1 ? S.players.find((x) => x.id === leadId) : null;
+  const streakAlive = S.streak.last === dayKey() || S.streak.last === dayKey(Date.now() - 864e5);
+  return {
+    name: p ? p.name : '', lastDone: S.history.length ? isoDay(S.history[0].ts) : '', streak: streakAlive ? S.streak.count : 0,
+    open: open.reduce((a, x) => a + x.n, 0), openRoom: open[0] ? open[0].r.name : '', openRoomId: open[0] ? open[0].r.id : '',
+    needy: needy && shineOf(needy) < 40 ? needy.name : '', needyId: needy && shineOf(needy) < 40 ? needy.id : '',
+    week: { chores: wk.filter((h) => h.task !== 'sweep' && h.task !== 'bonus' && !String(h.task).endsWith(':flash')).length, sparkles: wk.reduce((a, h) => a + h.pts, 0), leader: lead ? lead.name : '' }
+  };
+}
+async function enableReminders() {
+  try {
+    if (!mem.vapidKey) mem.vapidKey = (await api.pushKey()).key;
+    const perm = await Notification.requestPermission();
+    if (perm !== 'granted') { toast('Reminders need notification permission.'); refreshNotifyBox(); return; }
+    const reg = await navigator.serviceWorker.ready;
+    let sub = await reg.pushManager.getSubscription();
+    const want = b64uBytes(mem.vapidKey);
+    if (sub && sub.options && sub.options.applicationServerKey) {
+      const have = new Uint8Array(sub.options.applicationServerKey);
+      if (have.length !== want.length || have.some((b, i) => b !== want[i])) { await sub.unsubscribe(); sub = null; }
+    }
+    if (!sub) sub = await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: want });
+    S.deviceId = S.deviceId || uid() + uid();
+    await api.push('/push/subscribe', { id: S.deviceId, subscription: sub.toJSON(), tz: localTz(), prefs: notifyPrefs(), state: pushSummary() });
+    S.notify.on = true; mem.pushSynced = ''; save();
+    refreshNotifyBox(); toast('Reminders are on!', 'win');
+  } catch (e) { toast(e.message || 'Couldn\'t turn on reminders. Try again.'); refreshNotifyBox(); }
+}
+async function disableReminders() {
+  try {
+    const reg = await navigator.serviceWorker.ready;
+    const sub = await reg.pushManager.getSubscription();
+    if (sub) await sub.unsubscribe();
+  } catch (e) { /* already gone */ }
+  if (S.deviceId && api.live) api.push('/push/unsubscribe', { id: S.deviceId }).catch(() => {});
+  S.notify.on = false; save(); refreshNotifyBox(); toast('Reminders are off');
+  if ('clearAppBadge' in navigator) navigator.clearAppBadge().catch(() => {});
+}
+function pushPrefs() {
+  if (!S.notify.on || !S.deviceId || !api.live) return;
+  api.push('/push/update', { id: S.deviceId, tz: localTz(), prefs: notifyPrefs() }).catch((e) => { if (/aren't set up/.test(e.message)) resubscribe(); });
+}
+async function resubscribe() {
+  try {
+    const reg = await navigator.serviceWorker.ready;
+    const sub = await reg.pushManager.getSubscription();
+    if (!sub || Notification.permission !== 'granted') { S.notify.on = false; save(); return; }
+    await api.push('/push/subscribe', { id: S.deviceId, subscription: sub.toJSON(), tz: localTz(), prefs: notifyPrefs(), state: pushSummary() });
+  } catch (e) { /* try again next time */ }
+}
+// Keep the helper's small summary (streak, open chores, weekly totals) current so reminders say the right thing.
+let pushTimer = null;
+function syncReminderState(now = false) {
+  if (!S.notify.on || !S.deviceId || !api.live) return;
+  clearTimeout(pushTimer);
+  pushTimer = setTimeout(() => {
+    const state = pushSummary();
+    const key = JSON.stringify(state) + localTz();
+    if (key === mem.pushSynced) return;
+    api.push('/push/update', { id: S.deviceId, tz: localTz(), state })
+      .then(() => { mem.pushSynced = key; })
+      .catch((e) => { if (/aren't set up/.test(e.message)) resubscribe(); });
+  }, now ? 0 : 20000);
+}
+function updateBadge() {
+  if (!('setAppBadge' in navigator) || !S.notify.on) return;
+  const n = Object.values(S.sessions).reduce((a, s) => a + s.tasks.filter((t) => !t.done).length, 0);
+  (n ? navigator.setAppBadge(n) : navigator.clearAppBadge()).catch(() => {});
+}
+function afterSave() { updateBadge(); syncReminderState(); }
+document.addEventListener('visibilitychange', () => { if (document.hidden) syncReminderState(true); });
+
+/* Flash bonus: opened from a notification, double sparkles until the window ends. */
+let flashTimer = null;
+function flashTick() {
+  const left = (S.flashUntil || 0) - Date.now();
+  let bar = $('#flashBar');
+  if (left <= 0) {
+    clearInterval(flashTimer); flashTimer = null;
+    if (bar) { bar.remove(); app.classList.remove('has-flash'); toast('Flash bonus is over. Nice hustle!'); }
+    return;
+  }
+  if (!bar) { bar = document.createElement('div'); bar.id = 'flashBar'; bar.className = 'flash-bar'; bar.setAttribute('role', 'status'); document.body.appendChild(bar); }
+  app.classList.add('has-flash');
+  bar.textContent = `Flash bonus! Double sparkles for ${clockText(left)}`;
+}
+function startFlash() { if (!flashTimer) { flashTick(); flashTimer = setInterval(flashTick, 1000); } }
+function handleDeepLink(href) {
+  let u; try { u = new URL(href); } catch (e) { return; }
+  const flash = Number(u.searchParams.get('flash'));
+  if (flash > Date.now() && flash - Date.now() <= 60 * 60000 && flash !== S.flashUntil) {
+    S.flashUntil = flash; save(); startFlash();
+    toast('Flash bonus! Every chore earns double sparkles.', 'win');
+  }
+  const room = u.searchParams.get('room');
+  if (room && roomById(room) && !C.el && S.players.length) { ui.view = 'room'; ui.roomId = room; mem.selected = null; render(); }
+  if (u.search && location.search) history.replaceState(null, '', location.pathname);
 }
 
 /* ---------- photo flows ---------- */
@@ -1708,6 +1876,14 @@ document.addEventListener('click', (e) => {
     case 'coach-check': unlockAudio(); runCheck(true); break;
     case 'coach-flip': flipCamera(); break;
     case 'coach-area': editCoachArea(); break;
+    case 'notify-on': enableReminders(); break;
+    case 'notify-off': disableReminders(); break;
+    case 'notify-test': {
+      if ($('#nDailyOn')) { readNotifyForm(); save(); pushPrefs(); }
+      api.push('/push/test', { id: S.deviceId }).then(() => toast('Test sent. It should arrive in a few seconds.'))
+        .catch((e) => { toast(e.message); if (/expired|aren't set up/.test(e.message)) { S.notify.on = false; save(); refreshNotifyBox(); } });
+      break;
+    }
     case 'ask': openAsk(); break;
     case 'ask-task': e.stopPropagation(); openAsk(id); break;
     case 'ask-send': sendAsk($('#askQ').value, id || null); break;
@@ -1826,6 +2002,7 @@ document.addEventListener('click', (e) => {
       S.settings.sound = $('#sSound').checked;
       S.settings.voice = $('#sVoice').checked;
       if ($('#sVoiceId')) S.settings.voiceId = $('#sVoiceId').value;
+      if ($('#nDailyOn')) { readNotifyForm(); if (S.notify.on) pushPrefs(); }
       AI.failedNote = false;
       save(); closeSheet(); toast('Settings saved'); render(); loadAiVoices();
       break;
@@ -1874,6 +2051,12 @@ document.addEventListener('keydown', (e) => {
 
 render();
 loadAiVoices();
+handleDeepLink(location.href);
+if (Date.now() < (S.flashUntil || 0)) startFlash();
+if (navigator.serviceWorker) navigator.serviceWorker.addEventListener('message', (e) => { if (e.data && e.data.type === 'open') handleDeepLink(e.data.url); });
+if (S.notify.on && pushSupported() && Notification.permission !== 'granted') { S.notify.on = false; save(); }
+updateBadge();
+syncReminderState(true);
 if ('serviceWorker' in navigator && (location.protocol === 'https:' || location.hostname === 'localhost')) {
   navigator.serviceWorker.register('sw.js').catch(() => {});
 }

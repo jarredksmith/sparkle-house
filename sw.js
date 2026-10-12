@@ -1,6 +1,6 @@
 // Sparkle House service worker: keeps the app shell available offline.
 // Bump VERSION whenever you change index.html so phones pick up the update.
-const VERSION = 'sparkle-v8';
+const VERSION = 'sparkle-v9';
 const SHELL = [
   './',
   './index.html',
@@ -61,4 +61,34 @@ self.addEventListener('fetch', (event) => {
   }
 
   event.respondWith(caches.match(req).then((hit) => hit || fetch(req)));
+});
+
+/* ---------- Reminders (Web Push) ---------- */
+self.addEventListener('push', (event) => {
+  let d = {};
+  try { d = event.data ? event.data.json() : {}; } catch (e) { d = { body: event.data ? event.data.text() : '' }; }
+  const shown = self.registration.showNotification(d.title || 'Sparkle House', {
+    body: d.body || 'Fluff has a sparkle idea for you!',
+    icon: 'icons/icon-192.png',
+    badge: 'icons/icon-192.png',
+    tag: d.tag || 'sparkle',
+    data: { url: d.url || './' }
+  });
+  let badge = null;
+  if (typeof d.badge === 'number' && self.navigator && 'setAppBadge' in self.navigator) {
+    badge = (d.badge > 0 ? self.navigator.setAppBadge(d.badge) : self.navigator.clearAppBadge()).catch(() => {});
+  }
+  event.waitUntil(Promise.all([shown, badge]));
+});
+
+self.addEventListener('notificationclick', (event) => {
+  event.notification.close();
+  const url = new URL((event.notification.data && event.notification.data.url) || './', self.registration.scope).href;
+  event.waitUntil((async () => {
+    const wins = await self.clients.matchAll({ type: 'window', includeUncontrolled: true });
+    for (const w of wins) {
+      if ('focus' in w) { w.postMessage({ type: 'open', url }); return w.focus(); }
+    }
+    return self.clients.openWindow(url);
+  })());
 });

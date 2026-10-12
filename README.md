@@ -62,6 +62,21 @@ The phone compares tiny 48×36 snapshots of the camera feed five times a second,
 - **Ask Fluff:** tap a chore, then **Where is it?**, or tap **Ask** in Coach Mode. Type or use the mic. Fluff looks at the current camera view (or the room photo), answers out loud, and highlights the spot. If it can't find the item, you can remove the chore right there. Uses Claude Sonnet by default; set `MODEL_ASK` to change it.
 - **Focus areas:** before a photo scan, choose **Draw focus area**, or in Coach Mode tap the dotted-shape button. Tap points around the part of the room that counts. Everything outside is grayed out before any image goes to the AI, and movement there doesn't trigger checks. Coach Mode areas are saved per room and per camera; photo areas are saved per room and offered on the next scan.
 
+## Reminders (push notifications)
+
+Fluff can send a daily nudge, a streak saver, a Sunday recap and surprise "Flash bonus" double-sparkle windows. The helper sends them on a schedule, so it needs storage and a timer:
+
+1. In Cloudflare, go to **Storage & Databases > Workers KV** (or search "KV"), choose **Create instance**, and name it `sparkle-kv`.
+2. Open the `sparkle-helper` Worker, go to **Bindings > Add binding > KV namespace**, set the variable name to `SPARKLE_KV`, pick `sparkle-kv`, and save.
+3. In the Worker's **Settings > Trigger events** (Cron Triggers), add a schedule of `*/15 * * * *` (every 15 minutes).
+4. On your iPhone, open Sparkle House **from the Home Screen**, go to Settings > Reminders, tap **Turn on reminders**, and allow notifications. Then tap **Send a test**.
+
+- The helper creates its own push keys and stores them in KV. No extra secrets needed.
+- To keep reminders relevant, the app stores a small summary in your KV: first name, streak, open chore count, the room needing attention, and weekly totals. No photos.
+- Reminders respect quiet hours, skip the daily nudge if you've already cleaned that day, and never send two within 45 minutes.
+- Opening a Flash bonus notification doubles the sparkles for every chore finished in the next 30 minutes.
+- The app icon shows how many chores are left (iPhone lets you turn badges off under Settings > Notifications).
+
 ## Privacy
 
 - Photos go to your helper and on to Claude for that one request. Neither the app nor the helper saves them.

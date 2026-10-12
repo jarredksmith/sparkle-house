@@ -120,6 +120,10 @@ export default {
       try { return reply(await listVoices(env)); }
       catch (err) { return reply({ error: err.message }, err.status || 502); }
     }
+    if (url.pathname === '/push/key') {
+      try { return reply({ key: (await vapidKeys(env)).publicKey }); }
+      catch (err) { return reply({ error: err.message }, err.status || 502); }
+    }
     if (request.method !== 'POST') return reply({ error: 'Not found' }, 404);
 
     const len = Number(request.headers.get('Content-Length') || 0);
@@ -139,12 +143,245 @@ export default {
       if (url.pathname === '/analyze') return reply(await analyze(body, env));
       if (url.pathname === '/verify') return reply(await verify(body, env));
       if (url.pathname === '/ask') return reply(await ask(body, env));
+      if (url.pathname.startsWith('/push/')) return reply(await pushRoute(url.pathname, body, env));
       return reply({ error: 'Not found' }, 404);
     } catch (err) {
       return reply({ error: err.message || 'The AI helper hit a problem.' }, err.status || 502);
     }
+  },
+
+  // Cron Trigger (every 15 minutes): send any reminders that are due.
+  async scheduled(controller, env, ctx) {
+    ctx.waitUntil(runReminders(env, controller.scheduledTime || Date.now()));
   }
 };
+
+/* ---------- Reminders (Web Push) ----------
+   Needs a KV namespace bound as SPARKLE_KV and a Cron Trigger such as "*\/15 * * * *".
+   The helper makes its own push (VAPID) keys and keeps them in KV. */
+const PUSH_DEFAULTS = { daily: '17:30', streak: true, weekly: true, flash: true, quietStart: '21:00', quietEnd: '08:00' };
+const PUSH_HOSTS = /(^|\.)push\.apple\.com$|^fcm\.googleapis\.com$|(^|\.)push\.services\.mozilla\.com$|(^|\.)notify\.windows\.com$/;
+const te = new TextEncoder();
+const b64u = {
+  enc(buf) { const b = new Uint8Array(buf); let s = ''; for (let i = 0; i < b.length; i++) s += String.fromCharCode(b[i]); return btoa(s).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, ''); },
+  dec(str) { let s = String(str).replace(/-/g, '+').replace(/_/g, '/'); while (s.length % 4) s += '='; const bin = atob(s); const out = new Uint8Array(bin.length); for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i); return out; }
+};
+const concatBytes = (...parts) => { const out = new Uint8Array(parts.reduce((n, p) => n + p.length, 0)); let o = 0; for (const p of parts) { out.set(p, o); o += p.length; } return out; };
+
+function needKV(env) {
+  if (!env.SPARKLE_KV) throw httpError('Reminders need a KV namespace connected to the helper as SPARKLE_KV.', 501);
+  return env.SPARKLE_KV;
+}
+async function vapidKeys(env) {
+  const kv = needKV(env);
+  let v = await kv.get('vapid', 'json');
+  if (!v) {
+    const pair = await crypto.subtle.generateKey({ name: 'ECDSA', namedCurve: 'P-256' }, true, ['sign', 'verify']);
+    v = { publicKey: b64u.enc(await crypto.subtle.exportKey('raw', pair.publicKey)), jwk: await crypto.subtle.exportKey('jwk', pair.privateKey) };
+    await kv.put('vapid', JSON.stringify(v));
+  }
+  return v;
+}
+function pushContact(env) {
+  if (env.PUSH_CONTACT) return env.PUSH_CONTACT;
+  const first = String(env.ALLOWED_ORIGINS || '').split(',').map((s) => s.trim()).find((s) => /^https:\/\//.test(s));
+  return first || 'https://github.com';
+}
+// Apple asks servers not to make a new token more than once an hour, so tokens are reused for ~11 hours.
+async function vapidAuth(env, endpoint) {
+  const kv = needKV(env);
+  const v = await vapidKeys(env);
+  const aud = new URL(endpoint).origin;
+  const now = Math.floor(Date.now() / 1000);
+  const cached = await kv.get('jwt:' + aud, 'json');
+  if (cached && cached.pk === v.publicKey && cached.exp - now > 3600) return `vapid t=${cached.token}, k=${v.publicKey}`;
+  const exp = now + 12 * 3600;
+  const head = b64u.enc(te.encode(JSON.stringify({ typ: 'JWT', alg: 'ES256' })));
+  const claims = b64u.enc(te.encode(JSON.stringify({ aud, exp, sub: pushContact(env) })));
+  const key = await crypto.subtle.importKey('jwk', v.jwk, { name: 'ECDSA', namedCurve: 'P-256' }, false, ['sign']);
+  const sig = await crypto.subtle.sign({ name: 'ECDSA', hash: 'SHA-256' }, key, te.encode(`${head}.${claims}`));
+  const token = `${head}.${claims}.${b64u.enc(sig)}`;
+  await kv.put('jwt:' + aud, JSON.stringify({ token, exp, pk: v.publicKey }));
+  return `vapid t=${token}, k=${v.publicKey}`;
+}
+// RFC 8291 message encryption (aes128gcm), so only the phone can read the notification text.
+async function encryptPush(sub, text) {
+  const uaPublic = b64u.dec(sub.keys.p256dh), authSecret = b64u.dec(sub.keys.auth);
+  const local = await crypto.subtle.generateKey({ name: 'ECDH', namedCurve: 'P-256' }, true, ['deriveBits']);
+  const asPublic = new Uint8Array(await crypto.subtle.exportKey('raw', local.publicKey));
+  const uaKey = await crypto.subtle.importKey('raw', uaPublic, { name: 'ECDH', namedCurve: 'P-256' }, false, []);
+  const shared = new Uint8Array(await crypto.subtle.deriveBits({ name: 'ECDH', public: uaKey }, local.privateKey, 256));
+  const hkdf = async (salt, ikm, info, bytes) => new Uint8Array(await crypto.subtle.deriveBits(
+    { name: 'HKDF', hash: 'SHA-256', salt, info }, await crypto.subtle.importKey('raw', ikm, 'HKDF', false, ['deriveBits']), bytes * 8));
+  const ikm = await hkdf(authSecret, shared, concatBytes(te.encode('WebPush: info\0'), uaPublic, asPublic), 32);
+  const salt = crypto.getRandomValues(new Uint8Array(16));
+  const cek = await hkdf(salt, ikm, te.encode('Content-Encoding: aes128gcm\0'), 16);
+  const nonce = await hkdf(salt, ikm, te.encode('Content-Encoding: nonce\0'), 12);
+  const aes = await crypto.subtle.importKey('raw', cek, 'AES-GCM', false, ['encrypt']);
+  const cipher = new Uint8Array(await crypto.subtle.encrypt({ name: 'AES-GCM', iv: nonce }, aes, concatBytes(te.encode(text), new Uint8Array([2]))));
+  const header = new Uint8Array(21 + asPublic.length);
+  header.set(salt, 0);
+  new DataView(header.buffer).setUint32(16, 4096);
+  header[20] = asPublic.length;
+  header.set(asPublic, 21);
+  return concatBytes(header, cipher);
+}
+async function sendPush(env, rec, message, { ttl = 3600, urgency = 'normal', topic = '' } = {}) {
+  const headers = {
+    Authorization: await vapidAuth(env, rec.sub.endpoint),
+    'Content-Encoding': 'aes128gcm',
+    'Content-Type': 'application/octet-stream',
+    TTL: String(ttl),
+    Urgency: urgency
+  };
+  if (topic) headers.Topic = topic;
+  const res = await fetch(rec.sub.endpoint, { method: 'POST', headers, body: await encryptPush(rec.sub, JSON.stringify(message)) });
+  if (!res.ok) console.log('Push not delivered', res.status, (await res.text().catch(() => '')).slice(0, 200));
+  return res.status;
+}
+
+/* --- requests from the app --- */
+function cleanId(id) { const s = String(id || ''); if (!/^[A-Za-z0-9]{6,32}$/.test(s)) throw badRequest('Missing device id.'); return s; }
+function cleanTz(tz) { try { new Intl.DateTimeFormat('en-US', { timeZone: tz }); return String(tz); } catch { return 'UTC'; } }
+function cleanTime(t, fallback) { return /^([01]\d|2[0-3]):[0-5]\d$/.test(t) ? t : fallback; }
+function cleanPrefs(p = {}) {
+  return {
+    daily: p.daily === null || p.daily === false ? null : cleanTime(p.daily, PUSH_DEFAULTS.daily),
+    streak: p.streak !== false, weekly: p.weekly !== false, flash: p.flash !== false,
+    quietStart: cleanTime(p.quietStart, PUSH_DEFAULTS.quietStart), quietEnd: cleanTime(p.quietEnd, PUSH_DEFAULTS.quietEnd)
+  };
+}
+function cleanState(s = {}) {
+  const str = (v, n) => String(v || '').slice(0, n);
+  const int = (v) => Math.max(0, Math.min(100000, Math.round(Number(v) || 0)));
+  const w = s.week || {};
+  return {
+    name: str(s.name, 20), lastDone: /^\d{4}-\d{2}-\d{2}$/.test(s.lastDone) ? s.lastDone : '', streak: int(s.streak),
+    open: int(s.open), openRoom: str(s.openRoom, 30), openRoomId: str(s.openRoomId, 20).replace(/[^A-Za-z0-9_-]/g, ''),
+    needy: str(s.needy, 30), needyId: str(s.needyId, 20).replace(/[^A-Za-z0-9_-]/g, ''),
+    week: { chores: int(w.chores), sparkles: int(w.sparkles), leader: str(w.leader, 20) }
+  };
+}
+async function pushRoute(path, body, env) {
+  const kv = needKV(env);
+  const id = cleanId(body.id);
+  const key = 'sub:' + id;
+  if (path === '/push/subscribe') {
+    const s = body.subscription || {};
+    let host = '';
+    try { host = new URL(s.endpoint).hostname; } catch { /* invalid */ }
+    if (!/^https:/.test(String(s.endpoint)) || !PUSH_HOSTS.test(host) || !s.keys || !s.keys.p256dh || !s.keys.auth) throw badRequest('That notification subscription isn\'t valid.');
+    const old = await kv.get(key, 'json');
+    const rec = { sub: { endpoint: s.endpoint, keys: { p256dh: String(s.keys.p256dh), auth: String(s.keys.auth) } }, tz: cleanTz(body.tz), prefs: cleanPrefs(body.prefs), state: cleanState(body.state), sent: (old && old.sent) || {}, created: (old && old.created) || Date.now() };
+    await kv.put(key, JSON.stringify(rec));
+    return { ok: true };
+  }
+  const rec = await kv.get(key, 'json');
+  if (path === '/push/unsubscribe') { if (rec) await kv.delete(key); return { ok: true }; }
+  if (!rec) throw httpError('Reminders aren\'t set up on this phone yet.', 404);
+  if (path === '/push/update') {
+    if (body.tz) rec.tz = cleanTz(body.tz);
+    if (body.prefs) rec.prefs = cleanPrefs(body.prefs);
+    if (body.state) rec.state = cleanState(body.state);
+    await kv.put(key, JSON.stringify(rec));
+    return { ok: true };
+  }
+  if (path === '/push/test') {
+    const status = await sendPush(env, rec, { title: 'Sparkle House', body: 'Reminders are working! Fluff will cheer you on.', url: './', tag: 'test' }, { ttl: 120, urgency: 'high' });
+    if (status === 404 || status === 410) { await kv.delete(key); throw httpError('This phone\'s notification permission has expired. Turn reminders off and on again.', 410); }
+    if (status < 200 || status >= 300) throw httpError(`The notification service refused the test (error ${status}).`, 502);
+    return { ok: true };
+  }
+  throw httpError('Not found', 404);
+}
+
+/* --- the schedule --- */
+function localParts(tz, ms) {
+  const parts = Object.fromEntries(new Intl.DateTimeFormat('en-US', {
+    timeZone: tz, year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', weekday: 'short', hourCycle: 'h23'
+  }).formatToParts(new Date(ms)).map((p) => [p.type, p.value]));
+  return { date: `${parts.year}-${parts.month}-${parts.day}`, mins: (Number(parts.hour) % 24) * 60 + Number(parts.minute), weekday: parts.weekday };
+}
+const toMins = (t) => { const [h, m] = String(t).split(':').map(Number); return h * 60 + m; };
+const isDue = (target, mins) => mins >= target && mins < target + 60;
+function inQuiet(mins, start, end) {
+  if (start === end) return false;
+  return start < end ? mins >= start && mins < end : mins >= start || mins < end;
+}
+const pickOne = (arr) => arr[Math.floor(Math.random() * arr.length)];
+const plur = (n, w) => `${n} ${w}${n === 1 ? '' : 's'}`;
+function pickReminder(rec, ms) {
+  const p = { ...PUSH_DEFAULTS, ...rec.prefs }, st = rec.state || {}, sent = rec.sent || {};
+  if (ms - (sent.last || 0) < 45 * 60000) return null; // never two pushes close together
+  const L = localParts(rec.tz, ms);
+  const yesterday = localParts(rec.tz, ms - 864e5).date;
+  if (inQuiet(L.mins, toMins(p.quietStart), toMins(p.quietEnd))) return null;
+  const doneToday = st.lastDone === L.date;
+  const name = st.name ? `, ${st.name}` : '';
+  const badge = st.open || 0;
+
+  if (p.streak && !doneToday && st.lastDone === yesterday && st.streak >= 2 && sent.streak !== L.date && isDue(19 * 60 + 30, L.mins)) {
+    return { kind: 'streak', mark: L.date, opts: { ttl: 3 * 3600, urgency: 'high', topic: 'streak' }, payload: {
+      title: pickOne([`Your ${st.streak}-day streak ends at midnight!`, `Don't break the chain${name}!`]),
+      body: pickOne([`One quick chore keeps your ${plur(st.streak, 'day')} going. Fluff believes in you!`, `Just one chore before bed saves your ${st.streak}-day streak.`]),
+      url: st.openRoomId ? `./?room=${st.openRoomId}` : './', tag: 'streak', badge } };
+  }
+  if (p.weekly && L.weekday === 'Sun' && sent.weekly !== L.date && isDue(18 * 60, L.mins)) {
+    const w = st.week || {};
+    return { kind: 'weekly', mark: L.date, opts: { ttl: 6 * 3600, urgency: 'normal', topic: 'weekly' }, payload: w.chores ? {
+      title: 'Your sparkle week',
+      body: `This week: ${plur(w.chores, 'chore')} and ${plur(w.sparkles, 'sparkle')}.${w.leader ? ` ${w.leader} led the house!` : ' Nice work!'} Ready for a fresh week?`,
+      url: './', tag: 'weekly', badge } : {
+      title: 'New week, fresh start',
+      body: 'Snap one room tonight and Fluff will turn it into a game. A quick win starts a new streak!',
+      url: './', tag: 'weekly', badge } };
+  }
+  if (p.daily && !doneToday && sent.daily !== L.date && isDue(toMins(p.daily), L.mins)) {
+    const streakLine = st.streak >= 2 && st.lastDone === yesterday ? ` Keep your ${st.streak}-day streak going!` : '';
+    let payload;
+    if (st.open && st.openRoom) payload = {
+      title: pickOne(['Your list is waiting', `Ready for a quick win${name}?`, 'Fluff saved your spot']),
+      body: `${plur(st.open, 'chore')} left in the ${st.openRoom.toLowerCase()}. Knock one out for a quick sparkle boost!${streakLine}`,
+      url: `./?room=${st.openRoomId}` };
+    else if (st.needy) payload = {
+      title: `The ${st.needy.toLowerCase()} misses you`,
+      body: `A quick tidy would make it sparkle again. Fluff's ready when you are!${streakLine}`,
+      url: st.needyId ? `./?room=${st.needyId}` : './' };
+    else payload = {
+      title: pickOne(['Time for a quick sparkle?', `Fluff's bored${name}!`, 'Ten minutes, big sparkles']),
+      body: `Snap a messy room and Fluff will turn it into a game.${streakLine}`, url: './' };
+    return { kind: 'daily', mark: L.date, opts: { ttl: 2 * 3600, urgency: 'normal', topic: 'daily' }, payload: { ...payload, tag: 'daily', badge } };
+  }
+  // Flash bonus: about twice a week, at a random time between 4 and 7 PM.
+  if (p.flash && L.mins >= 16 * 60 && L.mins < 19 * 60 && ms - (sent.flash || 0) > 2 * 864e5 && Math.random() < 0.03) {
+    const until = ms + 30 * 60000;
+    return { kind: 'flash', mark: ms, opts: { ttl: 15 * 60, urgency: 'high', topic: 'flash' }, payload: {
+      title: 'Flash bonus! Double sparkles',
+      body: 'Every chore you finish in the next 30 minutes earns double sparkles. Go go go!',
+      url: `./?flash=${until}`, tag: 'flash', badge } };
+  }
+  return null;
+}
+async function runReminders(env, ms) {
+  const kv = env.SPARKLE_KV;
+  if (!kv) return;
+  const { keys } = await kv.list({ prefix: 'sub:' });
+  for (const k of keys) {
+    const rec = await kv.get(k.name, 'json');
+    if (!rec || !rec.sub) continue;
+    let r;
+    try { r = pickReminder(rec, ms); } catch (e) { console.log('Reminder check failed', e.message); continue; }
+    if (!r) continue;
+    try {
+      const status = await sendPush(env, rec, r.payload, r.opts);
+      if (status === 404 || status === 410) { await kv.delete(k.name); continue; }
+      if (status >= 200 && status < 300) {
+        rec.sent = { ...rec.sent, [r.kind]: r.mark, last: ms };
+        await kv.put(k.name, JSON.stringify(rec));
+      }
+    } catch (e) { console.log('Reminder send failed', e.message); }
+  }
+}
 
 async function analyze(body, env) {
   if (!isB64(body.image)) throw badRequest('No photo received.');
