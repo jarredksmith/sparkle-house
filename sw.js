@@ -1,10 +1,13 @@
 // Sparkle House service worker: keeps the app shell available offline.
 // Bump VERSION whenever you change index.html so phones pick up the update.
-const VERSION = 'sparkle-v13';
+const VERSION = 'sparkle-v14';
 const SHELL = [
   './',
   './index.html',
   './manifest.webmanifest',
+  './house.js',
+  './vendor/three.module.min.js',
+  './vendor/three.core.min.js',
   './icons/icon-192.png',
   './icons/icon-512.png',
   './icons/apple-touch-icon.png'

@@ -59,10 +59,20 @@ Want a voice that's truly Fluff's? Use ElevenLabs' voice design tool, save the v
 
 The phone compares tiny 48×36 snapshots of the camera feed five times a second, entirely on the device. When it sees movement, then stillness for about 2.5 seconds, and enough time has passed since the last check, it sends one photo to the helper along with the before photo and the open chores. Claude replies with which chores are clearly done. Anything blocked or out of view stays open, and you can always tap a chore to mark it done yourself.
 
+## Scanning a room
+
+Take two to four photos from different corners. Fluff looks at them together, makes one chore list for the whole room, and notes which photo each chore is in. On the room page, the little photos under the big one switch views, and tapping a chore jumps to its photo. Check my work also takes several photos. Fluff also notes the room's main furniture, which the 3D house uses.
+
+## The 3D house
+
+The House tab shows your home as a cozy dollhouse. Spin it with a finger, pinch to zoom, and tap a room to open it. Rooms with open chores have clutter, rooms that need love grow dust bunnies, and spotless rooms sparkle. Each room is furnished from what Fluff saw in its photos (or a cozy default for the room type), unlocked decor shows up in the room it suits, and Fluff hops over to whichever room needs the most help.
+
+Tap **Edit floor plan** to drag rooms into the shape of your house and resize them (each square is about a meter). The plan syncs to every phone. The house is drawn with Three.js (in `vendor/`, MIT license) from `house.js`, so it works offline.
+
 ## Ask Fluff and focus areas
 
 - **Ask Fluff:** tap a chore, then **Where is it?**, or tap **Ask** in Coach Mode. Type or use the mic. Fluff looks at the current camera view (or the room photo), answers out loud, and highlights the spot. If it can't find the item, you can remove the chore right there. Uses Claude Sonnet by default; set `MODEL_ASK` to change it.
-- **Focus areas:** before a photo scan, choose **Draw focus area**, or in Coach Mode tap the dotted-shape button. Tap points around the part of the room that counts. Everything outside is grayed out before any image goes to the AI, and movement there doesn't trigger checks. Coach Mode areas are saved per room and per camera; photo areas are saved per room and offered on the next scan.
+- **Focus areas:** in the photo picker, tap **Focus area** on any photo, or in Coach Mode tap the dotted-shape button. Tap points around the part of the room that counts. Everything outside is grayed out before any image goes to the AI, and movement there doesn't trigger checks. Coach Mode areas are saved per room and per camera; photo areas are saved per room and offered on the next scan.
 
 ## Reminders (push notifications)
 
@@ -127,5 +137,4 @@ After changing `index.html`, open `sw.js` and bump `VERSION` (for example `spark
 
 ## Next up
 
-- The 3D house: unlocked decor already tracks toward it.
 - A Home Screen widget for the iPhone app.

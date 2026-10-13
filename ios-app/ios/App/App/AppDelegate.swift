@@ -9,6 +9,11 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
 
     func application(_ application: UIApplication, didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]?) -> Bool {
         useLoudAudio()
+        // iOS can switch into "call" audio (for the Ask Fluff mic or the camera) and send sound to
+        // the ear speaker. Every time the audio route changes, put Fluff back on the loudspeaker.
+        NotificationCenter.default.addObserver(forName: AVAudioSession.routeChangeNotification, object: nil, queue: .main) { _ in
+            keepLoudspeaker()
+        }
         return true
     }
 
@@ -51,5 +56,20 @@ func useLoudAudio() {
         try AVAudioSession.sharedInstance().setCategory(.playback, mode: .default, options: [.mixWithOthers])
     } catch {
         print("Sparkle House: couldn't set the audio session: \(error)")
+    }
+}
+
+/// If audio is in call mode and coming out of the ear speaker (and no headphones are plugged in),
+/// send it to the loudspeaker instead. Headphones and Bluetooth speakers are left alone.
+func keepLoudspeaker() {
+    let session = AVAudioSession.sharedInstance()
+    guard session.category == .playAndRecord else { return }
+    let outputs = session.currentRoute.outputs
+    if outputs.contains(where: { $0.portType == .builtInReceiver }) {
+        do {
+            try session.overrideOutputAudioPort(.speaker)
+        } catch {
+            print("Sparkle House: couldn't switch to the loudspeaker: \(error)")
+        }
     }
 }

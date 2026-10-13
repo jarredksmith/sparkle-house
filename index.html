@@ -153,7 +153,7 @@ h1,h2,h3{font-family:var(--display);line-height:1.1;margin:0}
 
 /* tab bar */
 .tabbar{position:fixed;left:50%;transform:translateX(-50%);bottom:calc(var(--safe-b) + 12px);display:flex;gap:6px;background:var(--paper);border-radius:999px;padding:6px;box-shadow:0 4px 0 var(--ledge);z-index:15}
-.tab{border:0;background:none;border-radius:999px;padding:10px 20px;font-weight:800;display:flex;align-items:center;gap:6px;color:var(--ink-soft)}
+.tab{border:0;background:none;border-radius:999px;padding:10px 16px;font-weight:800;display:flex;align-items:center;gap:6px;color:var(--ink-soft)}
 .tab svg{width:20px;height:20px}
 .tab[aria-current="page"]{background:var(--grass);color:var(--ink)}
 
@@ -251,6 +251,39 @@ h1,h2,h3{font-family:var(--display);line-height:1.1;margin:0}
 .coach video{position:absolute;inset:0;width:100%;height:100%;object-fit:cover}
 .cam-overlay{position:absolute;inset:0;width:100%;height:100%;pointer-events:none}
 .area-ov{position:absolute;inset:0;width:100%;height:100%;pointer-events:none}
+/* 3D house */
+.house-head{display:flex;align-items:center;justify-content:space-between;gap:10px;margin:4px 0 10px}
+.house-wrap{position:relative;height:calc(100vh - var(--safe-t) - var(--safe-b) - 270px);min-height:330px;border-radius:26px;overflow:hidden;background:#cfeef7;box-shadow:0 4px 0 var(--ledge)}
+.house-stage{position:absolute;inset:0}
+.house-stage canvas{display:block;width:100%;height:100%}
+.house-labels{position:absolute;inset:0;pointer-events:none;overflow:hidden}
+.house-tag{position:absolute;left:0;top:0;pointer-events:auto;display:flex;align-items:center;gap:4px;border:0;border-radius:999px;background:rgba(255,255,255,.9);padding:2px 8px 2px 5px;font-weight:800;font-size:11.5px;color:var(--ink);box-shadow:0 2px 0 rgba(0,0,0,.1);white-space:nowrap}
+.house-tag span{font-size:13px}
+.house-tag b{background:var(--berry);color:#fff;border-radius:999px;min-width:19px;height:19px;display:grid;place-items:center;font-size:11px;padding:0 5px}
+.house-tag.clean{background:#FFF4C4}
+.house-msg{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px;text-align:center;padding:24px;font-weight:700;color:var(--ink-soft)}
+.house-hint{font-size:13px;font-weight:700;color:var(--ink-soft);text-align:center;margin:10px 4px 0}
+.plan-ed{position:fixed;inset:0;z-index:82;background:var(--meadow);display:flex;flex-direction:column;align-items:center;gap:12px;padding:calc(var(--safe-t) + 14px) 16px calc(var(--safe-b) + 16px);overflow:auto}
+.plan-ed .tip{background:var(--bubble);border:3px solid var(--bubble-edge);border-radius:20px;padding:10px 14px;font-weight:700;max-width:560px}
+.plan-ed .row{width:100%;max-width:560px}
+.plan-grid{position:relative;flex:none;background-color:#fff;background-image:linear-gradient(#DCEDE1 1px, transparent 1px),linear-gradient(90deg, #DCEDE1 1px, transparent 1px);border-radius:12px;box-shadow:0 3px 0 var(--ledge);touch-action:none}
+.plan-room{position:absolute;border:3px solid var(--leaf);border-radius:8px;background:rgba(127,207,154,.35);display:flex;flex-direction:column;align-items:center;justify-content:center;font-weight:800;font-size:12px;text-align:center;line-height:1.15;padding:2px;overflow:hidden;cursor:grab;touch-action:none}
+.plan-room small{font-weight:700;color:var(--ink-soft)}
+.plan-room.bad{border-color:#C2405E;background:rgba(255,111,142,.25)}
+.plan-room.t-kitchen{background:rgba(242,226,194,.8)}.plan-room.t-bedroom{background:rgba(201,183,230,.6)}.plan-room.t-bathroom{background:rgba(191,226,239,.8)}.plan-room.t-garage{background:rgba(186,192,200,.6)}
+.plan-handle{position:absolute;right:-2px;bottom:-2px;width:22px;height:22px;border-radius:50%;background:var(--leaf);border:3px solid #fff;cursor:nwse-resize}
+/* multi-photo scans */
+.shots{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.shot{position:relative;border-radius:16px;overflow:hidden;background:#dfe9e2;box-shadow:0 3px 0 var(--ledge);aspect-ratio:4/3}
+.shot img{display:block;width:100%;height:100%;object-fit:cover}
+.shot-n{position:absolute;left:8px;top:8px;background:var(--sun);font-family:var(--display);font-weight:800;border-radius:999px;min-width:26px;height:26px;display:grid;place-items:center;font-size:15px;box-shadow:0 2px 0 #E2B321}
+.shot-x{position:absolute;right:6px;top:6px;width:30px;height:30px;border-radius:50%;border:0;background:rgba(45,59,54,.75);color:#fff;font-size:14px;font-weight:800}
+.shot-area{position:absolute;left:6px;right:6px;bottom:6px;border:0;border-radius:999px;background:rgba(255,255,255,.92);font-weight:800;font-size:13px;padding:6px 8px}
+.thumbs{display:flex;gap:8px;margin:-6px 0 16px;overflow-x:auto;scrollbar-width:none}
+.thumb{position:relative;flex:none;width:72px;height:54px;border-radius:12px;overflow:hidden;border:3px solid transparent;padding:0;background:#dfe9e2}
+.thumb img{width:100%;height:100%;object-fit:cover;display:block}
+.thumb[aria-selected="true"]{border-color:var(--leaf)}
+.thumb span{position:absolute;right:3px;bottom:3px;background:var(--berry);color:#fff;font-weight:800;font-size:11px;border-radius:999px;min-width:18px;height:18px;display:grid;place-items:center;padding:0 4px}
 .zone.ask{background:rgba(138,211,240,.32);box-shadow:inset 0 0 0 3px var(--sky)}
 /* focus area editor */
 .area-ed{position:fixed;inset:0;z-index:82;background:#1d2a25;display:flex;flex-direction:column;padding:calc(var(--safe-t) + 12px) 14px calc(var(--safe-b) + 14px);gap:10px}
@@ -316,6 +349,9 @@ h1,h2,h3{font-family:var(--display);line-height:1.1;margin:0}
 <div class="app" id="app"></div>
 <nav class="tabbar" id="tabbar" aria-label="Main">
   <button class="tab" data-act="tab" data-view="home" aria-current="page">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><rect x="3.5" y="3.5" width="7" height="7" rx="2"/><rect x="13.5" y="3.5" width="7" height="7" rx="2"/><rect x="3.5" y="13.5" width="7" height="7" rx="2"/><rect x="13.5" y="13.5" width="7" height="7" rx="2"/></svg>Rooms
+  </button>
+  <button class="tab" data-act="tab" data-view="house">
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M3 11l9-7 9 7"/><path d="M5 10v10h14V10"/><path d="M10 20v-5h4v5"/></svg>House
   </button>
   <button class="tab" data-act="tab" data-view="rewards">
@@ -445,7 +481,7 @@ function save() {
 }
 
 // Photos live only in memory, never in storage.
-const mem = { before: {}, selected: null, lastFeedback: {} };
+const mem = { before: {}, selected: null, lastFeedback: {}, photoIdx: {} };
 let ui = { view: 'home', roomId: null };
 
 const player = () => S.players.find((p) => p.id === S.current) || S.players[0];
@@ -793,12 +829,13 @@ const api = {
       throw e;
     } finally { clearTimeout(timer); }
   },
-  async analyze(b64, room) {
+  async analyze(images, room) {
+    images = Array.isArray(images) ? images : [images];
     if (!this.live) {
       await wait(1600);
       return { summary: `Demo list for the ${room.toLowerCase()}. Connect your AI helper in Settings to get a list from your real photo.`, tasks: DEMO_TASKS.map((t) => ({ ...t })), demo: true };
     }
-    return { ...(await this.call('/analyze', { image: b64, room, persona: personaId() })), demo: false };
+    return { ...(await this.call('/analyze', { image: images[0], images, room, persona: personaId() })), demo: false };
   },
   async verify(beforeB64, afterB64, tasks) {
     if (!this.live) {
@@ -809,7 +846,9 @@ const api = {
       }
       return { done: [], feedback: NOCHANGE_LINES[Math.floor(Math.random() * NOCHANGE_LINES.length)] };
     }
-    return this.call('/verify', { before: beforeB64 || null, after: afterB64, tasks, persona: personaId() });
+    const befores = Array.isArray(beforeB64) ? beforeB64 : beforeB64 ? [beforeB64] : [];
+    const afters = Array.isArray(afterB64) ? afterB64 : [afterB64];
+    return this.call('/verify', { before: befores[0] || null, after: afters[0], befores, afters, tasks, persona: personaId() });
   },
   async pushKey() {
     const r = await fetch(this.base() + '/push/key', { headers: { 'X-App-Token': S.settings.token || '' } });
@@ -865,6 +904,7 @@ function render() {
   if (!S.players.length) { app.innerHTML = ''; openWelcome(); return; }
   if (ui.view === 'room') renderRoom();
   else if (ui.view === 'rewards') renderRewards();
+  else if (ui.view === 'house') renderHouse();
   else renderHome();
 }
 function weekPoints(pid) {
@@ -908,7 +948,7 @@ function renderRoom() {
   const room = roomById(ui.roomId);
   if (!room) { ui.view = 'home'; return render(); }
   const sess = S.sessions[room.id];
-  const head = `<button class="back" data-act="home">${ICON.back}House</button>
+  const head = `<button class="back" data-act="home">${ICON.back}${ui.from === 'house' ? 'House' : 'Rooms'}</button>
     <div class="room-head"><span class="emo">${esc(room.emoji)}</span><div><h1>${esc(room.name)}</h1>${pips(shineOf(room))}</div></div>`;
   if (!sess || !sess.tasks.length) {
     app.innerHTML = head + `
@@ -920,19 +960,25 @@ function renderRoom() {
         <button class="btn primary" data-act="photo" data-src="cam">${ICON.camera}Take a photo</button>
         <button class="btn" data-act="photo" data-src="lib">Choose from library</button>
       </div></div>`;
-    typeInto($('#roomLine'), sess && sess.summary ? sess.summary : 'Snap a photo of the mess and I\'ll turn it into a list. Stand in the doorway so I can see as much of the room as possible.');
+    typeInto($('#roomLine'), sess && sess.summary ? sess.summary : 'Snap the room from two or more corners so I can see all of it. I\'ll turn the mess into a list!');
     return;
   }
-  const img = mem.before[room.id];
+  const shots = mem.before[room.id] ? (mem.before[room.id].photos || [mem.before[room.id]]) : [];
+  const pi = Math.min(mem.photoIdx[room.id] || 0, Math.max(0, shots.length - 1));
+  const img = shots[pi];
   const open = sess.tasks.filter((t) => !t.done);
   const done = sess.tasks.length - open.length;
   const zoneCounts = {};
-  open.forEach((t) => { if (t.zone) zoneCounts[t.zone] = (zoneCounts[t.zone] || 0) + 1; });
+  open.forEach((t) => { if (t.zone && (t.photo || 0) === pi) zoneCounts[t.zone] = (zoneCounts[t.zone] || 0) + 1; });
   const sel = sess.tasks.find((t) => t.id === mem.selected);
   const photo = img
     ? `<div class="photo"><img src="${img.dataUrl}" alt="Your photo of the ${esc(room.name.toLowerCase())}">
         ${img.area ? `<svg class="area-ov" viewBox="0 0 1 1" preserveAspectRatio="none">${areaOverlaySVG(img.area)}</svg>` : ''}
-        <div class="zones">${ZONES.map((z) => `<div class="zone ${mem.askZone === z ? 'ask' : sel && sel.zone === z ? 'hot' : ''}">${zoneCounts[z] ? `<button class="mk" data-act="zone" data-zone="${z}" aria-label="${zoneCounts[z]} tasks here">${zoneCounts[z]}</button>` : ''}</div>`).join('')}</div></div>`
+        <div class="zones">${ZONES.map((z) => `<div class="zone ${mem.askZone === z ? 'ask' : sel && sel.zone === z && (sel.photo || 0) === pi ? 'hot' : ''}">${zoneCounts[z] ? `<button class="mk" data-act="zone" data-zone="${z}" aria-label="${zoneCounts[z]} tasks here">${zoneCounts[z]}</button>` : ''}</div>`).join('')}</div></div>
+        ${shots.length > 1 ? `<div class="thumbs" role="tablist" aria-label="Room photos">${shots.map((p, i) => {
+          const left = open.filter((t) => (t.photo || 0) === i).length;
+          return `<button class="thumb" role="tab" aria-selected="${i === pi}" data-act="photo-pick" data-i="${i}" aria-label="Photo ${i + 1}, ${left} chores"><img src="${p.dataUrl}" alt="">${left ? `<span>${left}</span>` : ''}</button>`;
+        }).join('')}</div>` : ''}`
     : `<div class="no-photo">${fluffSVG()}<span>Photos aren't kept after you close the app. Use “Scan again” to see where each task is.</span></div>`;
   const fb = mem.lastFeedback[room.id] || sess.summary || '';
   app.innerHTML = head + photo + `
@@ -962,6 +1008,134 @@ function renderRoom() {
       : `<button class="btn sun" data-act="finish">All done! Finish up</button>`}
     </div></div>`;
   if (fb) typeInto($('#roomLine'), fb);
+}
+/* ---------- 3D house (House tab) ----------
+   The drawing lives in house.js and is only loaded when the tab opens. Here: room types,
+   the floor plan (synced on each room as room.plan, in meters) and the plan editor. */
+const HOUSE = { mod: null, ctrl: null, loading: null, sig: '' };
+const TYPE_RULES = [
+  ['kitchen', /kitchen|pantry/, '🍳'], ['living', /living|family|den|lounge|great room/, '🛋️'], ['bathroom', /bath|powder|restroom|toilet/, '🛁'],
+  ['laundry', /laundry|utility|mud/, '🧺'], ['kids', /kid|play|nursery|toy|game/, '🧸🎮'], ['office', /office|study|library|desk/, '💻📚'],
+  ['garage', /garage|shop/, '🚗'], ['patio', /patio|porch|deck|yard|garden|balcony/, '🌿'], ['dining', /dining/, '🍽️'], ['bedroom', /bed|master|guest|suite/, '🛏️']
+];
+function roomType(r) {
+  const n = String(r.name || '').toLowerCase();
+  const byName = TYPE_RULES.find(([, re]) => re.test(n));
+  if (byName) return byName[0];
+  const byEmoji = TYPE_RULES.find(([, , e]) => r.emoji && e.includes(r.emoji));
+  return byEmoji ? byEmoji[0] : 'other';
+}
+const TYPE_SIZE = { living: [5, 4], kitchen: [4, 3], bedroom: [4, 4], bathroom: [3, 2], laundry: [2, 2], kids: [4, 3], office: [3, 3], garage: [4, 6], patio: [4, 3], dining: [4, 3], other: [3, 3] };
+const PLAN_W = 16, PLAN_D = 16;
+// Saved plans are kept; rooms without one get the first free spot, row by row.
+function autoPlans(rooms, fresh = false) {
+  const plans = {}, taken = [];
+  const overlaps = (a) => taken.some((b) => a.x < b.x + b.w && b.x < a.x + a.w && a.z < b.z + b.d && b.z < a.z + a.d);
+  rooms.forEach((r) => { if (!fresh && r.plan) { plans[r.id] = { ...r.plan }; taken.push(plans[r.id]); } });
+  rooms.forEach((r) => {
+    if (plans[r.id]) return;
+    const [w, d] = TYPE_SIZE[roomType(r)] || TYPE_SIZE.other;
+    let spot = null;
+    for (let z = 0; z <= PLAN_D - d && !spot; z++) for (let x = 0; x <= 12 - w && !spot; x++) { const c = { x, z, w, d }; if (!overlaps(c)) spot = c; }
+    spot = spot || { x: 0, z: Math.max(0, ...taken.map((t) => t.z + t.d)), w, d };
+    plans[r.id] = spot; taken.push(spot);
+  });
+  return plans;
+}
+function houseModel() {
+  const plans = autoPlans(S.rooms);
+  return {
+    persona: personaId(),
+    decor: S.unlocked.slice(),
+    rooms: S.rooms.map((r) => {
+      const sess = S.sessions[r.id];
+      return { id: r.id, name: r.name, emoji: r.emoji, type: roomType(r), plan: plans[r.id], shine: shineOf(r), open: sess ? sess.tasks.filter((t) => !t.done).length : 0, furniture: r.furniture || [] };
+    })
+  };
+}
+function renderHouse() {
+  app.innerHTML = topbar() + `
+    <div class="house-head"><h2 class="section-title" style="margin:0">Your house</h2>
+      <button class="btn small" data-act="plan-edit">Edit floor plan</button></div>
+    <div class="house-wrap" id="houseWrap"><div class="house-msg">${fluffSVG()}<span>Building your house…</span></div></div>
+    <p class="house-hint">Drag to spin, pinch to zoom, tap a room to open it. Dust bunnies mean a room needs love; sparkles mean it shines.</p>`;
+  mountHouse();
+}
+async function mountHouse() {
+  const wrap = $('#houseWrap');
+  if (!wrap) return;
+  if (!S.rooms.length) { wrap.innerHTML = `<div class="house-msg">${fluffSVG()}<span>Add a room on the Rooms tab and your house appears here.</span></div>`; return; }
+  try {
+    if (!HOUSE.mod) HOUSE.mod = await (HOUSE.loading = HOUSE.loading || import('./house.js'));
+    if (!HOUSE.ctrl) {
+      HOUSE.ctrl = HOUSE.mod.createHouse({
+        onRoom: (id) => { if (!roomById(id)) return; ui.from = 'house'; ui.view = 'room'; ui.roomId = id; mem.selected = null; window.scrollTo(0, 0); render(); },
+        onFluff: () => { const l = line('hello'); toast(`${PERSONAS[personaId()].name}: ${l}`); unlockAudio(); if (S.settings.voice) say(l); haptic(); }
+      });
+      HOUSE.sig = '';
+    }
+    const w = $('#houseWrap');
+    if (!w || ui.view !== 'house') return;
+    w.innerHTML = '';
+    w.appendChild(HOUSE.ctrl.el);
+    const model = houseModel();
+    const sig = JSON.stringify(model);
+    if (sig !== HOUSE.sig) { HOUSE.ctrl.update(model); HOUSE.sig = sig; }
+    HOUSE.ctrl.start();
+  } catch (e) {
+    console.warn('house', e);
+    const w = $('#houseWrap');
+    if (w) w.innerHTML = `<div class="house-msg">${fluffSVG()}<span>This device couldn't draw the 3D house.</span></div>`;
+  }
+}
+function openPlanEditor() {
+  if (!S.rooms.length) { toast('Add a room first.'); return; }
+  let plans = autoPlans(S.rooms);
+  const cell = Math.floor(Math.min(window.innerWidth - 36, window.innerHeight - 250, 560) / PLAN_W);
+  const ed = document.createElement('div');
+  ed.className = 'plan-ed'; ed.setAttribute('role', 'dialog'); ed.setAttribute('aria-label', 'Edit floor plan');
+  ed.innerHTML = `<div class="tip">Drag rooms to match your house. Drag the corner dot to resize. Each square is about a meter.</div>
+    <div class="plan-grid" style="width:${cell * PLAN_W}px;height:${cell * PLAN_D}px;background-size:${cell}px ${cell}px"></div>
+    <div class="row"><button class="btn" data-pe="auto">Auto-arrange</button><button class="btn" data-pe="cancel">Cancel</button><button class="btn primary" data-pe="save">Save</button></div>`;
+  document.body.appendChild(ed);
+  const grid = ed.querySelector('.plan-grid');
+  const draw = () => {
+    grid.innerHTML = S.rooms.map((r) => {
+      const p = plans[r.id];
+      const bad = S.rooms.some((o) => o.id !== r.id && (() => { const q = plans[o.id]; return p.x < q.x + q.w && q.x < p.x + p.w && p.z < q.z + q.d && q.z < p.z + p.d; })());
+      return `<div class="plan-room t-${roomType(r)}${bad ? ' bad' : ''}" data-id="${r.id}" style="left:${p.x * cell}px;top:${p.z * cell}px;width:${p.w * cell}px;height:${p.d * cell}px">
+        <span>${esc(r.emoji)} ${esc(r.name)}</span><small>${p.w}×${p.d}</small><i class="plan-handle" data-id="${r.id}"></i></div>`;
+    }).join('');
+  };
+  draw();
+  let drag = null;
+  grid.addEventListener('pointerdown', (e) => {
+    const el = e.target.closest('.plan-room');
+    if (!el) return;
+    e.preventDefault();
+    const id = el.dataset.id, p = plans[id];
+    drag = { id, resize: !!e.target.closest('.plan-handle'), sx: e.clientX, sy: e.clientY, p0: { ...p } };
+    grid.setPointerCapture(e.pointerId);
+  });
+  grid.addEventListener('pointermove', (e) => {
+    if (!drag) return;
+    const dx = Math.round((e.clientX - drag.sx) / cell), dz = Math.round((e.clientY - drag.sy) / cell);
+    const p = plans[drag.id], o = drag.p0;
+    if (drag.resize) { p.w = clamp(o.w + dx, 2, Math.min(9, PLAN_W - o.x)); p.d = clamp(o.d + dz, 2, Math.min(9, PLAN_D - o.z)); }
+    else { p.x = clamp(o.x + dx, 0, PLAN_W - p.w); p.z = clamp(o.z + dz, 0, PLAN_D - p.d); }
+    draw();
+  });
+  const stop = () => { drag = null; };
+  grid.addEventListener('pointerup', stop);
+  grid.addEventListener('pointercancel', stop);
+  ed.addEventListener('click', (e) => {
+    const b = e.target.closest('[data-pe]');
+    if (!b) return;
+    if (b.dataset.pe === 'auto') { plans = autoPlans(S.rooms, true); draw(); return; }
+    if (b.dataset.pe === 'save') { S.rooms.forEach((r) => { r.plan = { ...plans[r.id] }; }); save(); toast('Floor plan saved'); }
+    ed.remove();
+    if (ui.view === 'house') render();
+  });
 }
 function renderRewards() {
   const next = DECOR.find((d) => !S.unlocked.includes(d.id));
@@ -1112,6 +1286,7 @@ function saveSettingsForm() {
 }
 // Closing a sheet by swiping or tapping outside it. Settings are saved first.
 function dismissSheet() {
+  if ($('#sheet') && $('#sheet').dataset.kind === 'scan') SCAN.photos = [];
   const changed = saveSettingsForm();
   closeSheet();
   if (changed) { toast('Settings saved'); render(); }
@@ -1230,7 +1405,7 @@ function openAreaEditor({ src, w, h, mirror = false, initial = null, tip }) {
    per item; sparkle totals are worked out from events, so points are never lost. */
 const SYNC_KEY = 'sparklehouse.sync';
 const SYNC_BATCH = 500;
-const TASK_FIELDS = ['title', 'detail', 'zone', 'points', 'minutes', 'category', 'done', 'how', 'doneAt', 'by', 'flash'];
+const TASK_FIELDS = ['title', 'detail', 'photo', 'zone', 'points', 'minutes', 'category', 'done', 'how', 'doneAt', 'by', 'flash'];
 function loadSync() {
   const d = { on: false, since: 0, base: {}, last: 0, error: '' };
   try { return Object.assign(d, JSON.parse(localStorage.getItem(SYNC_KEY) || '{}')); } catch (e) { return d; }
@@ -1241,7 +1416,7 @@ function pickFields(o, fields) { const r = {}; for (const f of fields) if (o[f] 
 function syncEntities() {
   const m = new Map();
   S.players.forEach((p) => m.set('player:' + p.id, JSON.stringify(pickFields(p, ['name', 'color', 'persona', 'created']))));
-  S.rooms.forEach((r) => m.set('room:' + r.id, JSON.stringify(pickFields(r, ['name', 'emoji', 'shine', 'shineAt', 'photoArea', 'created']))));
+  S.rooms.forEach((r) => m.set('room:' + r.id, JSON.stringify(pickFields(r, ['name', 'emoji', 'shine', 'shineAt', 'photoArea', 'photoAreas', 'furniture', 'plan', 'created']))));
   Object.entries(S.sessions).forEach(([rid, ss]) => {
     if (!roomById(rid)) return;
     m.set('session:' + rid, JSON.stringify(pickFields(ss, ['summary', 'createdAt', 'demo', 'sweep'])));
@@ -1752,8 +1927,14 @@ function handleDeepLink(href) {
 
 /* ---------- photo flows ---------- */
 let photoMode = 'before';
+/* Scans use 2 to 4 photos from different corners, so Fluff sees the whole room.
+   SCAN holds the photos being collected until the person taps Scan (or Check). */
+const SCAN = { roomId: null, mode: 'before', photos: [] };
+const MAX_SHOTS = 4;
+function roomAreas(room) { return room.photoAreas || (room.photoArea ? [room.photoArea] : []); }
 function askPhoto(src, mode) {
   photoMode = mode || 'before';
+  if (SCAN.roomId !== ui.roomId || SCAN.mode !== photoMode) Object.assign(SCAN, { roomId: ui.roomId, mode: photoMode, photos: [] });
   unlockAudio();
   const input = src === 'lib' ? $('#inLib') : $('#inCam');
   input.value = '';
@@ -1768,31 +1949,83 @@ function busy(text) {
 const unbusy = () => { const b = $('#busy'); if (b) b.remove(); };
 async function onPhoto(file) {
   if (!file) return;
-  const room = roomById(ui.roomId);
+  const room = roomById(SCAN.roomId || ui.roomId);
   if (!room) return;
-  if (photoMode === 'after') return checkWithPhoto(file, room);
-  let area = null, full;
+  if (SCAN.roomId !== room.id) Object.assign(SCAN, { roomId: room.id, mode: photoMode, photos: [] });
+  if (SCAN.photos.length >= MAX_SHOTS) return openScanSheet();
+  let full;
   try { full = await fileToJpeg(file, 1280, 0.82); } catch (e) { toast('Couldn\'t open that photo. Try another one.'); return; }
-  const choice = await askFocusChoice(room, full.dataUrl);
-  if (choice === 'cancel') return;
-  if (choice === 'last') area = room.photoArea;
-  if (choice === 'draw') {
-    const el = await loadImage(full.dataUrl);
-    const drawn = await openAreaEditor({ src: full.dataUrl, w: el.naturalWidth, h: el.naturalHeight, initial: room.photoArea, tip: 'Tap points around the part of the photo to clean. Anything outside gets ignored.' });
-    if (drawn === undefined) return;
-    area = drawn;
-    room.photoArea = drawn || null; save();
+  const i = SCAN.photos.length;
+  // Reuse the focus area saved for this angle last time (shown on the photo, easy to clear).
+  const before = mem.before[room.id];
+  const area = SCAN.mode === 'after'
+    ? ((before && before.photos && before.photos[i] && before.photos[i].area) || roomAreas(room)[i] || null)
+    : (roomAreas(room)[i] || null);
+  SCAN.photos.push({ dataUrl: full.dataUrl, area });
+  openScanSheet();
+}
+function openScanSheet() {
+  const room = roomById(SCAN.roomId);
+  if (!room || !SCAN.photos.length) { closeSheet(); return; }
+  const n = SCAN.photos.length, after = SCAN.mode === 'after';
+  const shots = SCAN.photos.map((p, i) => `<div class="shot">
+      <img src="${p.dataUrl}" alt="Photo ${i + 1}">
+      ${p.area ? `<svg class="area-ov" viewBox="0 0 1 1" preserveAspectRatio="none">${areaOverlaySVG(p.area)}</svg>` : ''}
+      <span class="shot-n">${i + 1}</span>
+      <button class="shot-x" data-act="scan-del" data-i="${i}" aria-label="Remove photo ${i + 1}">✕</button>
+      ${after ? '' : `<button class="shot-area" data-act="scan-area" data-i="${i}">${p.area ? 'Edit area' : 'Focus area'}</button>`}
+    </div>`).join('');
+  const tip = after
+    ? (n < 2 ? 'Take photos from the same spots as before so Fluff can compare.' : 'Got it. Check now, or add another angle.')
+    : (n < 2 ? 'Nice! Now take one from another corner so Fluff sees the whole room.' : n < MAX_SHOTS ? 'Looking good. Scan now, or add another angle.' : 'That\'s the max. Ready to scan!');
+  const go = after ? `Check ${n === 1 ? 'this photo' : `${n} photos`}` : `Scan ${n === 1 ? 'this photo' : `${n} photos`}`;
+  openSheet(`<h2>${after ? 'Check my work' : `Photos of the ${esc(room.name.toLowerCase())}`}</h2>
+    <p class="set-intro" style="margin-top:-4px">${tip}</p>
+    <div class="shots">${shots}</div>
+    ${n < MAX_SHOTS ? `<div class="row" style="margin-top:12px">
+      <button class="btn ${n < 2 ? 'primary' : ''}" data-act="scan-more" data-src="cam">${ICON.camera}Take another photo</button>
+      <button class="btn small" data-act="scan-more" data-src="lib">Library</button></div>` : ''}
+    <button class="btn ${n >= 2 ? 'primary' : ''}" data-act="scan-go" style="width:100%;margin-top:10px">${go}</button>
+    ${!after && n < 2 ? '<p class="demo-note">One photo works too, but two angles catch more.</p>' : ''}
+    ${after ? '' : '<p class="demo-note">Seeing into another room? Use Focus area so Fluff ignores it.</p>'}`,
+  (w) => { w.dataset.kind = 'scan'; });
+}
+async function editScanArea(i) {
+  const room = roomById(SCAN.roomId), p = SCAN.photos[i];
+  if (!room || !p) return;
+  const el = await loadImage(p.dataUrl);
+  const drawn = await openAreaEditor({ src: p.dataUrl, w: el.naturalWidth, h: el.naturalHeight, initial: p.area, tip: 'Tap points around the part of the photo to clean. Anything outside gets ignored.' });
+  if (drawn !== undefined) {
+    p.area = drawn || null;
+    const areas = roomAreas(room).slice(); areas[i] = p.area; room.photoAreas = areas; delete room.photoArea; save();
   }
-  busy('Taking a look…');
+  openScanSheet();
+}
+async function runScan() {
+  const room = roomById(SCAN.roomId);
+  if (!room || !SCAN.photos.length) return;
+  closeSheet();
+  if (SCAN.mode === 'after') return checkWithPhotos(room);
+  busy(SCAN.photos.length > 1 ? `Looking at ${SCAN.photos.length} photos…` : 'Taking a look…');
   try {
-    const src = await loadImage(full.dataUrl);
-    const img = area ? toJpeg(src, src.naturalWidth, src.naturalHeight, 1280, 0.82, area) : full;
-    const res = await api.analyze(img.b64, room.name);
-    const small = toJpeg(src, src.naturalWidth, src.naturalHeight, 768, 0.78, area);
-    mem.before[room.id] = { dataUrl: full.dataUrl, small: small.b64, area };
+    const prepared = [];
+    for (const p of SCAN.photos) {
+      const src = await loadImage(p.dataUrl);
+      prepared.push({
+        dataUrl: p.dataUrl, area: p.area || null,
+        send: toJpeg(src, src.naturalWidth, src.naturalHeight, 1280, 0.82, p.area).b64,
+        small: toJpeg(src, src.naturalWidth, src.naturalHeight, 768, 0.78, p.area).b64
+      });
+    }
+    const res = await api.analyze(prepared.map((p) => p.send), room.name);
+    const photos = prepared.map(({ dataUrl, small, area }) => ({ dataUrl, small, area }));
+    mem.before[room.id] = { photos, dataUrl: photos[0].dataUrl, small: photos[0].small, area: photos[0].area };
+    mem.photoIdx[room.id] = 0;
+    room.photoAreas = photos.map((p) => p.area); delete room.photoArea;
+    if (Array.isArray(res.furniture) && res.furniture.length) room.furniture = res.furniture.slice(0, 12);
     const prev = S.sessions[room.id];
     const kept = prev ? prev.tasks.filter((t) => t.done) : [];
-    const tasks = (res.tasks || []).map((t) => ({ id: uid(), title: t.title, detail: t.detail || '', zone: ZONES.includes(t.zone) ? t.zone : null, points: clamp(Number(t.points) || 3, 1, 25), minutes: clamp(Number(t.minutes) || 0, 0, 90), category: t.category || 'other', done: false }));
+    const tasks = (res.tasks || []).map((t) => ({ id: uid(), title: t.title, detail: t.detail || '', photo: clamp((Number(t.photo) || 1) - 1, 0, photos.length - 1), zone: ZONES.includes(t.zone) ? t.zone : null, points: clamp(Number(t.points) || 3, 1, 25), minutes: clamp(Number(t.minutes) || 0, 0, 90), category: t.category || 'other', done: false }));
     S.sessions[room.id] = { tasks: [...kept, ...tasks], summary: res.summary || '', createdAt: Date.now(), demo: !!res.demo, sweep: prev && kept.length ? prev.sweep && !tasks.length : false };
     if (!tasks.length) {
       setShine(room, Math.max(shineOf(room), 90));
@@ -1801,45 +2034,30 @@ async function onPhoto(file) {
     }
     delete mem.lastFeedback[room.id];
     mem.selected = null;
+    SCAN.photos = [];
     save();
   } catch (e) {
     toast(e.message || 'Something went wrong. Try again.');
   } finally { unbusy(); render(); }
 }
-function askFocusChoice(room, dataUrl) {
-  return new Promise((resolve) => {
-    openSheet(`<h2>Scan this photo?</h2>
-      <div class="photo" style="margin-bottom:14px"><img src="${dataUrl}" alt="Your photo">${room.photoArea ? `<svg class="area-ov" viewBox="0 0 1 1" preserveAspectRatio="none">${areaOverlaySVG(room.photoArea)}</svg>` : ''}</div>
-      <p style="margin:0 0 12px;font-weight:600">Seeing into another room? Draw a focus area so Fluff ignores everything outside it.</p>
-      <div class="row" style="flex-wrap:wrap">
-        <button class="btn primary" data-fc="${room.photoArea ? 'last' : 'whole'}">${room.photoArea ? 'Scan with saved area' : 'Scan whole photo'}</button>
-        <button class="btn" data-fc="draw">${room.photoArea ? 'Redraw area' : 'Draw focus area'}</button>
-      </div>
-      ${room.photoArea ? '<button class="btn text" data-fc="whole" style="margin:8px auto 0">Scan whole photo instead</button>' : ''}`,
-    (w) => {
-      w.addEventListener('click', (e) => {
-        const b = e.target.closest('[data-fc]');
-        if (b) { closeSheet(); resolve(b.dataset.fc); }
-        else if (e.target === w) resolve('cancel');
-      });
-    });
-  });
-}
-async function checkWithPhoto(file, room) {
+async function checkWithPhotos(room) {
   const sess = S.sessions[room.id];
+  if (!sess) return;
   const open = sess.tasks.filter((t) => !t.done);
   busy('Checking your work…');
   try {
     const before = mem.before[room.id];
-    const afterSrc = await loadImage(URL.createObjectURL(file));
-    const after = toJpeg(afterSrc, afterSrc.naturalWidth, afterSrc.naturalHeight, 960, 0.8, before ? before.area : room.photoArea);
-    const res = await api.verify(before ? before.small : null, after.b64, open.map((t) => ({ id: t.id, title: t.title, zone: t.zone })));
+    const befores = before ? (before.photos || [before]).map((p) => p.small).filter(Boolean) : [];
+    const afters = [];
+    for (const p of SCAN.photos) { const src = await loadImage(p.dataUrl); afters.push(toJpeg(src, src.naturalWidth, src.naturalHeight, 960, 0.8, p.area).b64); }
+    const res = await api.verify(befores, afters, open.map((t) => ({ id: t.id, title: t.title, zone: t.zone, photo: (t.photo || 0) + 1 })));
     const r = applyVerify(room.id, res, 'photo');
     mem.lastFeedback[room.id] = res.feedback || line(r.count ? 'nice' : 'noChange');
+    SCAN.photos = [];
     unbusy();
     if (r.count) { pop(`+${r.pts} ✦`); unlockAudio(); chime(); }
   } catch (e) {
-    toast(e.message || 'Couldn\'t check that photo. Try again.');
+    toast(e.message || 'Couldn\'t check those photos. Try again.');
   } finally { unbusy(); render(); }
 }
 $('#inCam').addEventListener('change', (e) => onPhoto(e.target.files[0]));
@@ -2078,9 +2296,10 @@ function openAsk(taskId = null) {
     <div class="ask-chips">${suggestions.map((q) => `<button data-act="ask-chip" data-id="${t ? t.id : ''}" data-q="${esc(q)}">${esc(q)}</button>`).join('')}</div>
     <div id="askOut"></div>`);
 }
-async function askImage(roomId) {
+async function askImage(roomId, task) {
   if (C.el && C.video && C.video.videoWidth) return grabFrame(1024).b64;
-  const b = mem.before[roomId];
+  const all = mem.before[roomId] ? (mem.before[roomId].photos || [mem.before[roomId]]) : [];
+  const b = all[task && task.photo != null ? task.photo : (mem.photoIdx[roomId] || 0)] || all[0];
   if (!b) return null;
   const el = await loadImage(b.dataUrl);
   return toJpeg(el, el.naturalWidth, el.naturalHeight, 1024, 0.8, b.area).b64;
@@ -2095,7 +2314,8 @@ async function sendAsk(question, taskId) {
   out.innerHTML = `<div class="speaker ask-answer">${fluffSVG()}<div class="dialog"><span class="tag">Fluff</span>Let me look…</div></div>`;
   unlockAudio();
   try {
-    const image = await askImage(roomId);
+    const image = await askImage(roomId, t);
+    if (t && t.photo != null && !C.el) mem.photoIdx[roomId] = t.photo;
     const open = sess ? sess.tasks.filter((x) => !x.done && (!t || x.id !== t.id)).map((x) => x.title) : [];
     const res = await api.ask({ image, question, task: t ? { title: t.title, zone: t.zone } : null, tasks: open, persona: personaId() });
     if (!$('#askOut')) return;
@@ -2529,17 +2749,18 @@ document.addEventListener('visibilitychange', () => {
    Coach Mode and the focus-area editor, where touches are part of the work. */
 const SW = { on: false };
 function swipeScope() {
-  if ($('#busy') || $('.area-ed')) return null;
+  if ($('#busy') || $('.area-ed') || $('.plan-ed')) return null;
   const sh = $('#sheet');
   if (sh) return S.players.length ? { kind: 'sheet', els: [sh.querySelector('.sheet')] } : null;
   if (C.el) return null;
-  if (ui.view === 'room' || ui.view === 'rewards') return { kind: 'page', els: [...app.children] };
+  if (ui.view === 'room' || ui.view === 'rewards' || ui.view === 'house') return { kind: 'page', els: [...app.children] };
   return null;
 }
 function goBack() {
   if ($('#sheet')) { dismissSheet(); return; }
   if (ui.view === 'home') return;
-  ui.view = 'home'; mem.selected = null; window.scrollTo(0, 0); render();
+  ui.view = ui.view === 'room' && ui.from === 'house' ? 'house' : 'home'; ui.from = null;
+  mem.selected = null; window.scrollTo(0, 0); render();
 }
 function swipeMove(els, dx) {
   const fade = Math.max(0.3, 1 - Math.abs(dx) / (window.innerWidth * 1.3));
@@ -2549,7 +2770,7 @@ function swipeClear(els) { els.forEach((el) => { el.style.transition = ''; el.st
 document.addEventListener('touchstart', (e) => {
   SW.on = false;
   if (e.touches.length !== 1) return;
-  if (e.target.closest('input, select, textarea, video, .coach-tasks')) return; // sliders and fields keep their own drags
+  if (e.target.closest('input, select, textarea, video, canvas, .coach-tasks, .thumbs, .plan-ed, .house-wrap')) return; // sliders and fields keep their own drags
   const scope = swipeScope();
   if (!scope) return;
   const t = e.touches[0];
@@ -2600,18 +2821,27 @@ document.addEventListener('click', (e) => {
   if (!a) return;
   const act = a.dataset.act, id = a.dataset.id;
   switch (act) {
-    case 'tab': ui.view = a.dataset.view; mem.selected = null; window.scrollTo(0, 0); render(); break;
-    case 'home': ui.view = 'home'; mem.selected = null; window.scrollTo(0, 0); render(); break;
+    case 'tab': ui.from = null; ui.view = a.dataset.view; mem.selected = null; window.scrollTo(0, 0); render(); break;
+    case 'home': ui.view = ui.from === 'house' ? 'house' : 'home'; ui.from = null; mem.selected = null; window.scrollTo(0, 0); render(); break;
+    case 'plan-edit': openPlanEditor(); break;
     case 'room': ui.view = 'room'; ui.roomId = id; mem.selected = null; window.scrollTo(0, 0); render(); break;
     case 'photo': askPhoto(a.dataset.src, a.dataset.mode === 'after' ? 'after' : 'before'); break;
+    case 'scan-more': askPhoto(a.dataset.src, SCAN.mode); break;
+    case 'scan-del': SCAN.photos.splice(Number(a.dataset.i), 1); if (SCAN.photos.length) openScanSheet(); else closeSheet(); break;
+    case 'scan-area': editScanArea(Number(a.dataset.i)); break;
+    case 'scan-go': runScan(); break;
+    case 'photo-pick': mem.photoIdx[ui.roomId] = Number(a.dataset.i); render(); break;
     case 'select': {
       mem.selected = mem.selected === id ? null : id;
+      const st = mem.selected && S.sessions[ui.roomId] && S.sessions[ui.roomId].tasks.find((x) => x.id === id);
+      if (st && st.photo != null) mem.photoIdx[ui.roomId] = st.photo; // show the photo this chore is in
       render();
       break;
     }
     case 'zone': {
       const sess = S.sessions[ui.roomId];
-      const t = sess.tasks.find((x) => x.zone === a.dataset.zone && !x.done);
+      const pi = mem.photoIdx[ui.roomId] || 0;
+      const t = sess.tasks.find((x) => x.zone === a.dataset.zone && !x.done && (x.photo || 0) === pi);
       if (t) { mem.selected = t.id; render(); const li = app.querySelector(`.task[data-id="${t.id}"]`); if (li) li.scrollIntoView({ block: 'center', behavior: reduceMotion ? 'auto' : 'smooth' }); }
       break;
     }

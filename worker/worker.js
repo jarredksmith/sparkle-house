@@ -17,22 +17,28 @@ const ZONES = ['top-left', 'top', 'top-right', 'left', 'center', 'right', 'botto
 const CATEGORIES = ['trash', 'put-away', 'laundry', 'dishes', 'surfaces', 'floors', 'other'];
 const MAX_BODY = 9 * 1024 * 1024;
 
-const ANALYZE_SYSTEM = `You help a family turn a photo of a messy room into a short, friendly cleaning checklist for a chore game.
+// Rough furniture positions, as seen from where the first photo was taken.
+const SPOTS = ['back-left', 'back', 'back-right', 'left', 'center', 'right', 'front-left', 'front', 'front-right'];
+const ANALYZE_SYSTEM = `You help a family turn photos of a messy room into a short, friendly cleaning checklist for a chore game.
+
+You may get up to 4 photos of the same room taken from different spots. Treat them as one room and make one list.
 
 Rules:
-- Only list things you can actually see in the photo. Never invent objects.
+- Only list things you can actually see in the photos. Never invent objects.
+- If the same item shows up in more than one photo, list it only once.
 - Each task names the specific visible object and, when it's obvious, where it should go. Example: "Put the cereal box back in the pantry".
 - Group small identical items into one task, such as "Pick up the 6 toy cars".
 - Skip anything that already looks tidy. Do not mention or describe any people in the photo.
 - Solid gray areas are outside the part of the room being cleaned. Ignore anything in them.
 - Order tasks in a sensible cleaning flow: trash first, then things to put away, then surfaces, then floors.
 - Points reflect effort: 2-5 for a quick grab, 6-12 for a few minutes of work, 13-25 for a big job.
-- "zone" is the ninth of the photo where the item sits: one of ${ZONES.join(', ')}.
+- "photo" is the number of the photo where the item is easiest to see (1 if there's only one photo). "zone" is the ninth of THAT photo where the item sits: one of ${ZONES.join(', ')}.
+- Also list the main furniture and big objects you can see (up to 12), such as sofa, bed, table, chairs, desk, TV, bookshelf, dresser, fridge, counter, sink, stove, toilet, bathtub, washer, rug, plant, lamp. Use one or two plain words for each. "spot" is roughly where it sits in the room, as if looking in from where the first photo was taken: ${SPOTS.join(', ')}.
 - Return 3 to 12 tasks. If the room already looks tidy, return no tasks and say so in the summary. If the photo isn't of a room, return no tasks and say what you see in the summary.
 
 Answer with the chore list in the required JSON format.`;
 
-const VERIFY_SYSTEM = `You check progress in a family chore game. You get the open chores for a room, a recent AFTER photo, and usually a BEFORE photo taken when the list was made.
+const VERIFY_SYSTEM = `You check progress in a family chore game. You get the open chores for a room, one or more recent AFTER photos, and usually one or more BEFORE photos taken when the list was made. Several photos are the same room from different spots.
 
 Rules:
 - The camera may have moved a little between photos. Compare the same areas, using each task's zone as a hint.
@@ -57,17 +63,30 @@ const CHORE_SCHEMA = {
         properties: {
           title: { type: 'string', description: 'The chore, max 70 characters, naming the specific visible object.' },
           detail: { type: 'string', description: 'Short optional tip, or an empty string.' },
+          photo: { type: 'integer', description: 'Which photo (1-4) shows this item best.' },
           zone: { type: 'string', enum: ZONES },
           points: { type: 'integer', description: 'Effort points from 1 to 25.' },
           minutes: { type: 'integer', description: 'Estimated minutes from 1 to 90.' },
           category: { type: 'string', enum: CATEGORIES }
         },
-        required: ['title', 'detail', 'zone', 'points', 'minutes', 'category'],
+        required: ['title', 'detail', 'photo', 'zone', 'points', 'minutes', 'category'],
+        additionalProperties: false
+      }
+    },
+    furniture: {
+      type: 'array',
+      items: {
+        type: 'object',
+        properties: {
+          item: { type: 'string', description: 'One or two plain words, like "sofa" or "coffee table".' },
+          spot: { type: 'string', enum: SPOTS }
+        },
+        required: ['item', 'spot'],
         additionalProperties: false
       }
     }
   },
-  required: ['room_guess', 'summary', 'tasks'],
+  required: ['room_guess', 'summary', 'tasks', 'furniture'],
   additionalProperties: false
 };
 const PROGRESS_SCHEMA = {
@@ -488,33 +507,41 @@ async function runReminders(env, ms) {
   }
 }
 
+const photoList = (many, one) => (Array.isArray(many) ? many : [one]).filter(isB64).slice(0, 4);
 async function analyze(body, env) {
-  if (!isB64(body.image)) throw badRequest('No photo received.');
+  const photos = photoList(body.images, body.image);
+  if (!photos.length) throw badRequest('No photo received.');
   const room = String(body.room || 'room').slice(0, 40);
-  const j = await askClaude(env, env.MODEL_ANALYZE || 'claude-sonnet-5-5', withPersona(ANALYZE_SYSTEM, body.persona), [
-    imageBlock(body.image),
-    { type: 'text', text: `This is the ${room}. Make the chore list.` }
-  ], CHORE_SCHEMA, 4000);
+  const content = [];
+  photos.forEach((p, i) => { if (photos.length > 1) content.push({ type: 'text', text: `Photo ${i + 1}:` }); content.push(imageBlock(p)); });
+  content.push({ type: 'text', text: photos.length > 1 ? `These ${photos.length} photos show the ${room} from different spots. Make one chore list for the whole room.` : `This is the ${room}. Make the chore list.` });
+  const j = await askClaude(env, env.MODEL_ANALYZE || 'claude-sonnet-5-5', withPersona(ANALYZE_SYSTEM, body.persona), content, CHORE_SCHEMA, 5000);
   const tasks = (Array.isArray(j.tasks) ? j.tasks : []).slice(0, 15).map((t) => ({
     title: String(t.title || '').trim().slice(0, 90),
     detail: String(t.detail || '').trim().slice(0, 120),
+    photo: clampNum(t.photo, 1, photos.length, 1),
     zone: pickEnum(t.zone, ZONES, 'center'),
     points: clampNum(t.points, 1, 25, 4),
     minutes: clampNum(t.minutes, 1, 90, 2),
     category: pickEnum(t.category, CATEGORIES, 'other')
   })).filter((t) => t.title);
-  return { room_guess: String(j.room_guess || '').slice(0, 40), summary: String(j.summary || '').slice(0, 200), tasks };
+  const furniture = (Array.isArray(j.furniture) ? j.furniture : []).slice(0, 12)
+    .map((f) => ({ item: String(f.item || '').trim().toLowerCase().slice(0, 30), spot: pickEnum(f.spot, SPOTS, 'center') }))
+    .filter((f) => f.item);
+  return { room_guess: String(j.room_guess || '').slice(0, 40), summary: String(j.summary || '').slice(0, 200), tasks, furniture };
 }
 
 async function verify(body, env) {
-  if (!isB64(body.after)) throw badRequest('No photo received.');
+  const afters = photoList(body.afters, body.after);
+  const befores = photoList(body.befores, body.before);
+  if (!afters.length) throw badRequest('No photo received.');
   const tasks = (Array.isArray(body.tasks) ? body.tasks : []).slice(0, 30).map((t) => ({
-    id: String(t.id).slice(0, 20), title: String(t.title || '').slice(0, 90), zone: t.zone || 'unknown'
+    id: String(t.id).slice(0, 20), title: String(t.title || '').slice(0, 90), zone: t.zone || 'unknown', ...(t.photo ? { photo: clampNum(t.photo, 1, 4, 1) } : {})
   }));
   if (!tasks.length) return { done: [], blocked: [], feedback: 'Everything is already done!' };
   const content = [];
-  if (isB64(body.before)) content.push({ type: 'text', text: 'BEFORE photo:' }, imageBlock(body.before));
-  content.push({ type: 'text', text: 'AFTER photo:' }, imageBlock(body.after));
+  befores.forEach((p, i) => content.push({ type: 'text', text: befores.length > 1 ? `BEFORE photo ${i + 1}:` : 'BEFORE photo:' }, imageBlock(p)));
+  afters.forEach((p, i) => content.push({ type: 'text', text: afters.length > 1 ? `AFTER photo ${i + 1}:` : 'AFTER photo:' }, imageBlock(p)));
   content.push({ type: 'text', text: `Open chores:\n${JSON.stringify(tasks)}` });
   const j = await askClaude(env, env.MODEL_VERIFY || 'claude-haiku-5-5', withPersona(VERIFY_SYSTEM, body.persona), content, PROGRESS_SCHEMA, 1500);
   const ids = new Set(tasks.map((t) => t.id));
