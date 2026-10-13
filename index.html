@@ -643,7 +643,10 @@ function pop(text) {
 let actx = null;
 // In the iPhone app, Fluff's voice, phone voice and chime play natively. Web audio inside the app follows
 // the ring/silent switch; native audio plays even on silent and mixes with music.
-const FA = NATIVE && window.Capacitor && typeof window.Capacitor.registerPlugin === 'function' ? window.Capacitor.registerPlugin('FluffAudio') : null;
+// The app has no JavaScript bundler, so call the native plugin straight through Capacitor's bridge.
+const FA = NATIVE && window.Capacitor && typeof window.Capacitor.nativePromise === 'function'
+  ? new Proxy({}, { get: (_, method) => (args) => window.Capacitor.nativePromise('FluffAudio', method, args || {}) })
+  : null;
 let faBroken = false;
 async function nativeAudio(method, args) {
   if (!FA || faBroken) return false;
@@ -2892,24 +2895,43 @@ async function startCoach(roomId) {
     const t = $('#cTime'); if (t) t.textContent = `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
   }, 1000);
 }
+// iPhones release the camera a beat after it's stopped, so a camera request right after a switch can
+// fail once. Try again after a short pause before giving up.
+// Ask for the exact camera first: a loose request can quietly hand back the selfie camera when the back
+// camera is still busy.
+async function getCam(facing, size) {
+  const gum = (video) => navigator.mediaDevices.getUserMedia({ video, audio: false });
+  try { return await gum({ facingMode: { exact: facing }, ...size }); }
+  catch (e) {
+    await wait(500);
+    try { return await gum({ facingMode: { exact: facing }, ...size }); }
+    catch (e2) { return gum({ facingMode: { ideal: facing }, ...size }); }
+  }
+}
 async function openCamera(facing) {
   if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) throw new Error('nocam');
-  if (C.stream) C.stream.getTracks().forEach((t) => t.stop());
+  if (C.stream) { C.stream.getTracks().forEach((t) => t.stop()); C.stream = null; if (C.video) C.video.srcObject = null; await wait(250); }
   const size = { width: { ideal: 1280 }, height: { ideal: 960 } };
-  let stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: { ideal: facing }, ...size }, audio: false });
+  let stream = await getCam(facing, size);
   C.wide = false;
   // The ultra-wide lens sees much more of a room from one spot, so use it when the phone has one.
-  if (facing === 'environment' && S.settings.wide !== false) {
+  // If the phone won't open it, stay on the regular lens for the rest of the session.
+  if (facing === 'environment' && S.settings.wide !== false && !mem.noWide) {
     try {
       const cams = (await navigator.mediaDevices.enumerateDevices()).filter((d) => d.kind === 'videoinput');
       const uw = cams.find((d) => /ultra ?wide/i.test(d.label) && !/dual|triple/i.test(d.label));
       const cur = (stream.getVideoTracks()[0].getSettings() || {}).deviceId;
-      if (uw && uw.deviceId && uw.deviceId !== cur) {
+      if (uw && uw.deviceId && uw.deviceId === cur) C.wide = true;
+      else if (uw && uw.deviceId) {
         stream.getTracks().forEach((t) => t.stop());
+        await wait(250);
         try { stream = await navigator.mediaDevices.getUserMedia({ video: { deviceId: { exact: uw.deviceId }, ...size }, audio: false }); C.wide = true; }
-        catch (e) { stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: { ideal: facing }, ...size }, audio: false }); }
-      } else if (uw && uw.deviceId === cur) C.wide = true;
-    } catch (e) { /* keep the regular lens */ }
+        catch (e) { mem.noWide = true; await wait(400); stream = await getCam(facing, size); }
+      }
+    } catch (e) {
+      mem.noWide = true;
+      if (!stream || !stream.getVideoTracks()[0] || stream.getVideoTracks()[0].readyState !== 'live') stream = await getCam(facing, size);
+    }
   }
   C.stream = stream;
   const actual = (C.stream.getVideoTracks()[0].getSettings() || {}).facingMode || facing;
@@ -2992,7 +3014,7 @@ async function flipCamera() {
     coachLine(next === 'user' ? 'Front camera on. Now you can see what I see!' : 'Back camera on.', false);
     if (C.ready || C.setup === 'result') setupReady(); // new view: look again
   } catch (e) {
-    coachLine('I couldn\'t switch cameras. Trying the other one again.', false);
+    coachLine(`I couldn't switch cameras${e && e.name ? ` (${e.name})` : ''}. Tap the camera button to try again.`, false);
     try { await openCamera(S.settings.camera); } catch (err) { /* stays off */ }
   } finally { C.flipping = false; }
 }
