@@ -9,7 +9,7 @@ const GRASS = 0x9bd6a3;
 const WALL = 0xfff4e0;
 const WALL_TOP = 0xf0dcb8;
 const FLOOR = {
-  living: 0xdcae7e, kitchen: 0xf2e2c2, bedroom: 0xc9b7e6, bathroom: 0xbfe2ef, laundry: 0xe3e4ea,
+  living: 0xdcae7e, game: 0xb9c7e8, kitchen: 0xf2e2c2, bedroom: 0xc9b7e6, bathroom: 0xbfe2ef, laundry: 0xe3e4ea,
   kids: 0xffd3a1, office: 0xc9a47e, garage: 0xbac0c8, patio: 0xd9ceb6, dining: 0xd9b088, other: 0xe8dbc6
 };
 const ACCENT = [0xff8fa3, 0x8ad3f0, 0xffd447, 0x9bd6a3, 0xc9b7e6, 0xffb36b];
@@ -126,6 +126,7 @@ const DEFAULTS = {
   bedroom: [['bed', 'back'], ['sidetable', 'back-right'], ['dresser', 'left'], ['rug', 'center'], ['lamp', 'back-left']],
   bathroom: [['bathtub', 'back'], ['toilet', 'left'], ['vanity', 'right']],
   laundry: [['washer', 'back-left'], ['washer', 'back-right'], ['basket', 'center']],
+  game: [['rug', 'center'], ['sofa', 'back'], ['tv', 'front'], ['toys', 'center'], ['bookshelf', 'right']],
   kids: [['bed', 'back-left'], ['rug', 'center'], ['toys', 'center'], ['bookshelf', 'right']],
   office: [['desk', 'back'], ['chair', 'center'], ['bookshelf', 'left'], ['plant', 'right']],
   garage: [['car', 'center'], ['shelf', 'back']],
@@ -191,7 +192,8 @@ export function createHouse({ onRoom, onFluff } = {}) {
     camera.zoom = view.zoom;
     const r = 60;
     camera.position.set(Math.sin(view.yaw) * Math.cos(view.pitch) * r, Math.sin(view.pitch) * r, Math.cos(view.yaw) * Math.cos(view.pitch) * r);
-    camera.lookAt(0, 0.4, 0);
+    camera.position.y += view.targetY || 0;
+    camera.lookAt(0, (view.targetY || 0) + 0.4, 0);
     camera.updateProjectionMatrix();
   }
 
@@ -199,21 +201,50 @@ export function createHouse({ onRoom, onFluff } = {}) {
     world.clear();
     anim = []; roomCenters = []; floors = [];
     labels.innerHTML = '';
-    const rooms = model.rooms || [];
+    // Floors: "all" stacks every floor like an open dollhouse; a number shows just that floor.
+    const sel = model.floor ?? 'all';
+    const levelOf = (r) => r.plan.f || 0;
+    const rooms = (model.rooms || []).filter((r) => sel === 'all' || levelOf(r) === sel);
     if (!rooms.length) return;
+    const GAP = 2.6;
+    const yOf = (r) => (sel === 'all' ? levelOf(r) * GAP : 0);
     let minX = Infinity, minZ = Infinity, maxX = -Infinity, maxZ = -Infinity;
     rooms.forEach(({ plan: p }) => { minX = Math.min(minX, p.x); minZ = Math.min(minZ, p.z); maxX = Math.max(maxX, p.x + p.w); maxZ = Math.max(maxZ, p.z + p.d); });
     const cx = (minX + maxX) / 2, cz = (minZ + maxZ) / 2;
     const span = Math.max(maxX - minX, maxZ - minZ);
-    view.radius = Math.max(4.5, Math.hypot(maxX - minX, maxZ - minZ) / 2);
+    const ys = rooms.map(yOf), minY = Math.min(...ys), maxY = Math.max(...ys);
+    view.targetY = (minY + maxY) / 2;
+    view.radius = Math.max(4.5, Math.hypot(maxX - minX, maxZ - minZ) / 2, (maxY - minY) / 2 + 2.5);
+    const below = rooms.filter((r) => yOf(r) < 0);
+    const underground = sel !== 'all' && sel < 0;
 
-    // Yard: grass, a stone path and a ring of trees.
+    // Yard: grass, a stone path and a ring of trees. A basement shows as a cutaway in the lawn.
     const yardR = span * 0.7 + 3.5;
-    const grass = mesh(geo(`yard${yardR}`, () => new THREE.CylinderGeometry(yardR, yardR + 0.3, 0.4, 48)), GRASS, 0, -0.42, 0);
+    let hole = null;
+    if (below.length) {
+      let a = Infinity, b = Infinity, c = -Infinity, e = -Infinity;
+      below.forEach(({ plan: p }) => { a = Math.min(a, p.x - cx); b = Math.min(b, p.z - cz); c = Math.max(c, p.x + p.w - cx); e = Math.max(e, p.z + p.d - cz); });
+      hole = { x0: a - 0.15, z0: b - 0.15, x1: c + 0.15, z1: e + 0.15 };
+    }
+    const yard = new THREE.Shape();
+    yard.absarc(0, 0, yardR, 0, Math.PI * 2, false);
+    if (hole) {
+      const h = new THREE.Path();
+      h.moveTo(hole.x0, -hole.z0); h.lineTo(hole.x1, -hole.z0); h.lineTo(hole.x1, -hole.z1); h.lineTo(hole.x0, -hole.z1); h.lineTo(hole.x0, -hole.z0);
+      yard.holes.push(h);
+    }
+    const grass = mesh(new THREE.ExtrudeGeometry(yard, { depth: 0.4, bevelEnabled: false, curveSegments: 40 }), underground ? 0xcdb796 : GRASS, 0, -0.42, 0);
+    grass.rotation.x = -Math.PI / 2;
     grass.castShadow = false;
     world.add(grass);
+    if (hole) {
+      // Earthy walls and a floor for the dug-out basement.
+      const depth = GAP + 0.3, w = hole.x1 - hole.x0, d = hole.z1 - hole.z0, mx = (hole.x0 + hole.x1) / 2, mz = (hole.z0 + hole.z1) / 2;
+      world.add(box(w, 0.2, d, 0xa98463, mx, -depth - 0.2, mz));
+      [[mx, hole.z0 - 0.1, w + 0.4, 0.2], [mx, hole.z1 + 0.1, w + 0.4, 0.2], [hole.x0 - 0.1, mz, 0.2, d], [hole.x1 + 0.1, mz, 0.2, d]].forEach(([x, z, ww, dd]) => world.add(box(ww, depth - 0.02, dd, 0xb8926e, x, -depth, z)));
+    }
     const rnd = rng('yard' + rooms.length);
-    for (let i = 0; i < 14; i++) {
+    for (let i = 0; i < (underground ? 0 : 14); i++) {
       const a = (i / 14) * Math.PI * 2 + rnd() * 0.3, d = yardR * (0.72 + rnd() * 0.2);
       const x = Math.cos(a) * d, z = Math.sin(a) * d;
       if (Math.abs(x) < (maxX - minX) / 2 + 1.2 && Math.abs(z) < (maxZ - minZ) / 2 + 1.2) continue;
@@ -221,13 +252,13 @@ export function createHouse({ onRoom, onFluff } = {}) {
       t.position.set(x, 0, z); t.scale.setScalar(1.2 + rnd() * 0.6);
       world.add(t);
     }
-    for (let i = 0; i < 18; i++) {
+    for (let i = 0; i < (underground ? 0 : 18); i++) {
       const a = rnd() * Math.PI * 2, d = yardR * (0.5 + rnd() * 0.45);
       const x = Math.cos(a) * d, z = Math.sin(a) * d;
       if (Math.abs(x) < (maxX - minX) / 2 + 0.6 && Math.abs(z) < (maxZ - minZ) / 2 + 0.6) continue;
       world.add(ball(0.08, ACCENT[i % ACCENT.length], x, 0.06, z, 8));
     }
-    for (let i = 0; i < 4; i++) world.add(cyl(0.35, 0.35, 0.05, 0xe8e2d4, -0.3 + (i % 2) * 0.5, -0.02, (maxZ - minZ) / 2 + 0.7 + i * 0.8));
+    for (let i = 0; i < (underground ? 0 : 4); i++) world.add(cyl(0.35, 0.35, 0.05, 0xe8e2d4, -0.3 + (i % 2) * 0.5, -0.02, (maxZ - minZ) / 2 + 0.7 + i * 0.8));
     // Each unlocked decor piece goes to the room it suits (or the living room, or the first room).
     const decorFor = {};
     (model.decor || []).forEach((id) => {
@@ -238,7 +269,8 @@ export function createHouse({ onRoom, onFluff } = {}) {
     rooms.forEach((r) => {
       const p = r.plan, x0 = p.x - cx, z0 = p.z - cz, w = p.w, d = p.d;
       const g = new THREE.Group();
-      g.position.set(x0, 0, z0);
+      const y0 = yOf(r);
+      g.position.set(x0, y0, z0);
       world.add(g);
       const floor = box(w, 0.16, d, FLOOR[r.type] || FLOOR.other, w / 2, -0.16, d / 2);
       floor.userData.roomId = r.id;
@@ -247,10 +279,20 @@ export function createHouse({ onRoom, onFluff } = {}) {
       // Low cutaway walls so you can see inside, like a dollhouse.
       // Walls sit just inside the room's edge, so two rooms that share a wall don't flicker.
       const wh = 0.75, wt = 0.12;
-      [[w / 2, wt / 2, w, wt], [w / 2, d - wt / 2, w, wt], [wt / 2, d / 2, wt, d - wt * 2], [w - wt / 2, d / 2, wt, d - wt * 2]].forEach(([wx, wz, ww, wd]) => {
-        g.add(box(ww, wh, wd, WALL, wx, 0, wz));
-        g.add(box(ww + 0.001, 0.05, wd + 0.04, WALL_TOP, wx, wh, wz));
-      });
+      if (r.type === 'patio') {
+        // Outdoor spaces get deck boards and a little picket fence instead of walls.
+        for (let i = 1; i < Math.floor(d / 0.5); i++) g.add(box(w - 0.1, 0.012, 0.03, 0xb8946c, w / 2, 0, i * 0.5));
+        const posts = [];
+        for (let x = 0.1; x <= w - 0.05; x += 0.5) posts.push([x, 0.08], [x, d - 0.08]);
+        for (let z = 0.6; z <= d - 0.55; z += 0.5) posts.push([0.08, z], [w - 0.08, z]);
+        posts.forEach(([px, pz]) => g.add(box(0.07, 0.42, 0.07, 0xffffff, px, 0, pz)));
+        [[w / 2, 0.08, w, 0.05], [w / 2, d - 0.08, w, 0.05], [0.08, d / 2, 0.05, d], [w - 0.08, d / 2, 0.05, d]].forEach(([rx, rz, rw, rd]) => g.add(box(rw, 0.05, rd, 0xffffff, rx, 0.3, rz)));
+      } else {
+        [[w / 2, wt / 2, w, wt], [w / 2, d - wt / 2, w, wt], [wt / 2, d / 2, wt, d - wt * 2], [w - wt / 2, d / 2, wt, d - wt * 2]].forEach(([wx, wz, ww, wd]) => {
+          g.add(box(ww, wh, wd, WALL, wx, 0, wz));
+          g.add(box(ww + 0.001, 0.05, wd + 0.04, WALL_TOP, wx, wh, wz));
+        });
+      }
 
       // Furniture: what Fluff saw in the photos, or a cozy default set for the room type.
       const seen = (r.furniture || []).map((f) => [modelFor(f.item), f.spot]).filter(([m]) => m);
@@ -319,9 +361,9 @@ export function createHouse({ onRoom, onFluff } = {}) {
         }
       }
 
-      const center = new THREE.Vector3(x0 + w / 2, 1.15, z0 + d / 2);
-      const tagPos = new THREE.Vector3(x0 + w / 2, 2.3, z0 + d / 2);
-      roomCenters.push({ id: r.id, center, open: r.open || 0, w, d, x0, z0 });
+      const center = new THREE.Vector3(x0 + w / 2, y0 + 1.15, z0 + d / 2);
+      const tagPos = new THREE.Vector3(x0 + w / 2, y0 + 1.6, z0 + d / 2);
+      roomCenters.push({ id: r.id, center, open: r.open || 0, w, d, x0, z0, y: y0 });
       const tag = document.createElement('button');
       tag.className = 'house-tag' + (r.open ? ' has' : '') + (!r.open && shine >= 80 ? ' clean' : '');
       tag.dataset.room = r.id;
@@ -336,12 +378,12 @@ export function createHouse({ onRoom, onFluff } = {}) {
     fluff.scale.setScalar(1.5);
     world.add(fluff);
     const busiest = [...roomCenters].sort((a, b) => b.open - a.open)[0];
-    const start = busiest ? new THREE.Vector3(busiest.center.x + Math.min(0.9, busiest.w / 4), 0, busiest.center.z + Math.min(0.9, busiest.d / 4)) : new THREE.Vector3();
+    const start = busiest ? new THREE.Vector3(busiest.center.x + Math.min(0.9, busiest.w / 4), busiest.y, busiest.center.z + Math.min(0.9, busiest.d / 4)) : new THREE.Vector3();
     fluff.position.copy(start);
     fluffState = { from: start.clone(), to: start.clone(), t0: 0, dur: 1, next: 2 };
 
-    sun.position.set(span * 0.6, span * 1.2 + 6, span * 0.8);
-    sun.target.position.set(0, 0, 0);
+    sun.position.set(span * 0.6, span * 1.2 + 6 + maxY, span * 0.8);
+    sun.target.position.set(0, view.targetY, 0);
     const sc = sun.shadow.camera, ext = span * 0.75 + 3;
     sc.left = -ext; sc.right = ext; sc.top = ext; sc.bottom = -ext; sc.near = 0.5; sc.far = span * 4 + 30;
     sc.updateProjectionMatrix();
@@ -356,8 +398,8 @@ export function createHouse({ onRoom, onFluff } = {}) {
       const needy = roomCenters.filter((r) => r.open);
       const pool = needy.length && Math.random() < 0.75 ? needy : roomCenters;
       const r = pool[Math.floor(Math.random() * pool.length)];
-      const to = new THREE.Vector3(r.x0 + 0.6 + Math.random() * (r.w - 1.2), 0, r.z0 + 0.6 + Math.random() * (r.d - 1.2));
-      s.from = fluff.position.clone(); s.from.y = 0; s.to = to; s.t0 = t;
+      const to = new THREE.Vector3(r.x0 + 0.6 + Math.random() * (r.w - 1.2), r.y, r.z0 + 0.6 + Math.random() * (r.d - 1.2));
+      s.from = fluff.position.clone(); s.from.y = s.to.y; s.to = to; s.t0 = t;
       s.dur = Math.max(0.8, s.from.distanceTo(to) * 0.45); s.next = t + s.dur + 2.5 + Math.random() * 3;
       fluff.rotation.y = Math.atan2(to.x - s.from.x, to.z - s.from.z);
     }
@@ -365,9 +407,10 @@ export function createHouse({ onRoom, onFluff } = {}) {
     if (k < 1) {
       const hops = Math.max(1, Math.round(s.dur / 0.4));
       fluff.position.lerpVectors(s.from, s.to, k);
-      fluff.position.y = Math.abs(Math.sin(k * Math.PI * hops)) * 0.35;
+      // Hop between floors in one big bounce, small hops on the same floor.
+      fluff.position.y += s.from.y !== s.to.y ? Math.sin(k * Math.PI) * 1.4 : Math.abs(Math.sin(k * Math.PI * hops)) * 0.35;
     } else {
-      fluff.position.y = Math.abs(Math.sin(t * 2.4)) * 0.06;
+      fluff.position.y = s.to.y + Math.abs(Math.sin(t * 2.4)) * 0.06;
     }
   }
 

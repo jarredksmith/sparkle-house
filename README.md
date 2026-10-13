@@ -67,7 +67,7 @@ Take two to four photos from different corners. Fluff looks at them together, ma
 
 The House tab shows your home as a cozy dollhouse. Spin it with a finger, pinch to zoom, and tap a room to open it. Rooms with open chores have clutter, rooms that need love grow dust bunnies, and spotless rooms sparkle. Each room is furnished from what Fluff saw in its photos (or a cozy default for the room type), unlocked decor shows up in the room it suits, and Fluff hops over to whichever room needs the most help.
 
-Tap **Edit floor plan** to drag rooms into the shape of your house and resize them (each square is about a meter). The plan syncs to every phone. The house is drawn with Three.js (in `vendor/`, MIT license) from `house.js`, so it works offline.
+Tap **Edit floor plan** to drag rooms into the shape of your house and resize them (each square is about a meter). Floor tabs let you add a basement, an upstairs and a third floor; tap a room to move it to another floor, with a faint outline of the floor below for lining things up. On the House tab, **All floors** stacks them like an open dollhouse (a basement shows as a cutaway in the lawn), or pick one floor to see just that level. Patios and yards get deck boards and a picket fence instead of walls. The plan syncs to every phone. The house is drawn with Three.js (in `vendor/`, MIT license) from `house.js`, so it works offline.
 
 ## Ask Fluff and focus areas
 
