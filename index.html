@@ -235,6 +235,7 @@ h1,h2,h3{font-family:var(--display);line-height:1.1;margin:0}
 .toasts{position:fixed;top:calc(var(--safe-t) + 12px);left:0;right:0;display:flex;flex-direction:column;align-items:center;gap:8px;z-index:90;pointer-events:none}
 .toast{background:var(--ink);color:#fff;font-weight:800;border-radius:16px;padding:10px 16px;max-width:92vw;animation:tin .25s ease-out;box-shadow:0 4px 0 rgba(0,0,0,.15)}
 .toast.win{background:var(--sun);color:var(--ink)}
+.toast.err{background:#C2405E;font-size:14px;line-height:1.3}
 @keyframes tin{from{transform:translateY(-12px);opacity:0}}
 .pop{position:fixed;left:50%;top:42%;transform:translate(-50%,0);font-family:var(--display);font-weight:800;font-size:46px;color:var(--ink);background:var(--sun);border-radius:999px;padding:4px 22px;box-shadow:0 5px 0 #E2B321;z-index:95;pointer-events:none;animation:pop 1.4s ease-out forwards}
 @keyframes pop{0%{transform:translate(-50%,20px) scale(.6);opacity:0}15%{transform:translate(-50%,0) scale(1.08);opacity:1}30%{transform:translate(-50%,0) scale(1)}80%{opacity:1}100%{transform:translate(-50%,-70px);opacity:0}}
@@ -502,7 +503,7 @@ const fresh = () => ({
     { id: 'bathroom', name: 'Bathroom', emoji: '🛁', shine: 50, shineAt: Date.now(), created: 4 }
   ],
   sessions: {},
-  settings: { workerUrl: '', token: '', sound: true, voice: false, voiceId: '', minGap: 20, camera: 'environment', pep: 'light', wide: true },
+  settings: { workerUrl: '', token: '', sound: true, voice: false, voiceId: '', minGap: 20, camera: 'environment', pep: 'light', wide: false },
   household: { lifetime: 0 },
   unlocked: [],
   streak: { count: 0, last: '' },
@@ -547,6 +548,8 @@ function migrate(s) {
   return s;
 }
 let S = load();
+// The ultra-wide lens became opt-in after it stopped some phones switching to the back camera.
+if (!S.settings.wideOptIn) { S.settings.wide = false; S.settings.wideOptIn = true; }
 recompute();
 function addEvent(e) { e.id = e.id || uid() + uid(); S.history.unshift(e); return e; }
 function recompute() {
@@ -632,7 +635,7 @@ function toast(msg, kind = '') {
   const t = document.createElement('div');
   t.className = 'toast ' + kind; t.textContent = msg;
   $('#toasts').appendChild(t);
-  setTimeout(() => t.remove(), 3200);
+  setTimeout(() => t.remove(), kind === 'err' ? 9000 : 3200);
 }
 function pop(text) {
   const p = document.createElement('div');
@@ -1545,7 +1548,7 @@ function openSettings() {
     </select><small>Cheers you on, nudges you when you stall, and tracks your sparkles. Chatty uses more AI voice credits.</small></label>
     <label class="field"><span>Wait at least <span id="gapVal">${st.minGap}</span> seconds between checks</span><input id="sGap" type="range" min="10" max="60" step="5" value="${st.minGap}"><small>Longer waits mean fewer AI checks.</small></label>
     <label class="toggle">Sound when chores are done<input id="sSound" type="checkbox" ${st.sound ? 'checked' : ''}></label>
-    <label class="toggle">Use the wide lens when the phone has one<input id="sWide" type="checkbox" ${st.wide !== false ? 'checked' : ''}></label>
+    <label class="toggle">Try the ultra-wide lens (some phones can't)<input id="sWide" type="checkbox" ${st.wide === true ? 'checked' : ''}></label>
     <small class="set-note">The wide lens sees more of the room from one spot.</small>`;
   const house = `<h4 class="set-sub">Household sync</h4>
     <div id="syncBox">${syncHTML()}</div>
@@ -2897,26 +2900,40 @@ async function startCoach(roomId) {
 }
 // iPhones release the camera a beat after it's stopped, so a camera request right after a switch can
 // fail once. Try again after a short pause before giving up.
-// Ask for the exact camera first: a loose request can quietly hand back the selfie camera when the back
-// camera is still busy.
+// Opens the front or back camera, trying several ways before giving up, because iPhones differ:
+// a loose request can quietly return the selfie camera, the back "virtual" multi-lens camera can refuse
+// some sizes, and a camera that was just stopped can be busy for a moment. Errors are collected so a
+// failure can say what went wrong.
 async function getCam(facing, size) {
   const gum = (video) => navigator.mediaDevices.getUserMedia({ video, audio: false });
-  try { return await gum({ facingMode: { exact: facing }, ...size }); }
-  catch (e) {
-    await wait(500);
-    try { return await gum({ facingMode: { exact: facing }, ...size }); }
-    catch (e2) { return gum({ facingMode: { ideal: facing }, ...size }); }
+  const errs = [];
+  const attempt = async (label, video) => { try { const st = await gum(video); C.camHow = label; return st; } catch (e) { errs.push(`${label}: ${e.name || e.message}`); return null; } };
+  let st = await attempt('exact', { facingMode: { exact: facing }, ...size });
+  if (!st) { await wait(450); st = await attempt('exact-any-size', { facingMode: { exact: facing } }); }
+  if (!st) {
+    // Pick the camera by name: for the back, the plain "Back Camera" first, then the multi-lens ones.
+    try {
+      const cams = (await navigator.mediaDevices.enumerateDevices()).filter((d) => d.kind === 'videoinput' && d.deviceId);
+      const want = facing === 'user' ? [/front/i] : [/^back camera$/i, /back (dual|triple)/i, /back|rear/i];
+      const picks = [];
+      want.forEach((re) => cams.forEach((d) => { if (re.test(d.label) && !picks.includes(d)) picks.push(d); }));
+      for (const d of picks) { st = await attempt(d.label || 'device', { deviceId: { exact: d.deviceId } }); if (st) break; await wait(250); }
+      if (!picks.length) errs.push(`devices: ${cams.map((d) => d.label || '?').join(', ') || 'none listed'}`);
+    } catch (e) { errs.push('list: ' + (e.name || e.message)); }
   }
+  if (!st) st = await attempt('ideal', { facingMode: { ideal: facing } });
+  if (!st) { const e = new Error(errs.join(' · ')); e.name = 'CameraError'; throw e; }
+  return st;
 }
 async function openCamera(facing) {
   if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) throw new Error('nocam');
-  if (C.stream) { C.stream.getTracks().forEach((t) => t.stop()); C.stream = null; if (C.video) C.video.srcObject = null; await wait(250); }
+  if (C.stream) { C.stream.getTracks().forEach((t) => t.stop()); C.stream = null; if (C.video) C.video.srcObject = null; await wait(300); }
   const size = { width: { ideal: 1280 }, height: { ideal: 960 } };
   let stream = await getCam(facing, size);
   C.wide = false;
-  // The ultra-wide lens sees much more of a room from one spot, so use it when the phone has one.
-  // If the phone won't open it, stay on the regular lens for the rest of the session.
-  if (facing === 'environment' && S.settings.wide !== false && !mem.noWide) {
+  // The ultra-wide lens sees more of a room from one spot. It's opt-in (Settings > Coach Mode), and if the
+  // phone won't open it, the regular lens is used for the rest of the session.
+  if (facing === 'environment' && S.settings.wide === true && !mem.noWide) {
     try {
       const cams = (await navigator.mediaDevices.enumerateDevices()).filter((d) => d.kind === 'videoinput');
       const uw = cams.find((d) => /ultra ?wide/i.test(d.label) && !/dual|triple/i.test(d.label));
@@ -2924,8 +2941,8 @@ async function openCamera(facing) {
       if (uw && uw.deviceId && uw.deviceId === cur) C.wide = true;
       else if (uw && uw.deviceId) {
         stream.getTracks().forEach((t) => t.stop());
-        await wait(250);
-        try { stream = await navigator.mediaDevices.getUserMedia({ video: { deviceId: { exact: uw.deviceId }, ...size }, audio: false }); C.wide = true; }
+        await wait(300);
+        try { stream = await navigator.mediaDevices.getUserMedia({ video: { deviceId: { exact: uw.deviceId } }, audio: false }); C.wide = true; }
         catch (e) { mem.noWide = true; await wait(400); stream = await getCam(facing, size); }
       }
     } catch (e) {
@@ -3014,7 +3031,11 @@ async function flipCamera() {
     coachLine(next === 'user' ? 'Front camera on. Now you can see what I see!' : 'Back camera on.', false);
     if (C.ready || C.setup === 'result') setupReady(); // new view: look again
   } catch (e) {
-    coachLine(`I couldn't switch cameras${e && e.name ? ` (${e.name})` : ''}. Tap the camera button to try again.`, false);
+    // Shown as a toast too, since the setup card covers Fluff's speech bubble.
+    const why = (e && (e.message || e.name)) || 'unknown';
+    toast(`Couldn't open the ${next === 'user' ? 'front' : 'back'} camera. ${why}`, 'err');
+    coachLine(`I couldn't switch cameras. Tap the camera button to try again.`, false);
+    console.warn('camera switch failed', why);
     try { await openCamera(S.settings.camera); } catch (err) { /* stays off */ }
   } finally { C.flipping = false; }
 }
