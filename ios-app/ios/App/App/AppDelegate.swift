@@ -54,6 +54,7 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
 func useLoudAudio() {
     do {
         try AVAudioSession.sharedInstance().setCategory(.playback, mode: .default, options: [.mixWithOthers])
+        try AVAudioSession.sharedInstance().setActive(true)
     } catch {
         print("Sparkle House: couldn't set the audio session: \(error)")
     }
@@ -70,6 +71,113 @@ func keepLoudspeaker() {
             try session.overrideOutputAudioPort(.speaker)
         } catch {
             print("Sparkle House: couldn't switch to the loudspeaker: \(error)")
+        }
+    }
+}
+
+/// The app's web view, with Fluff's native audio plugin added.
+class FluffBridgeViewController: CAPBridgeViewController {
+    override func capacitorDidLoad() {
+        bridge?.registerPluginInstance(FluffAudioPlugin())
+    }
+}
+
+/// Plays Fluff's voice (AI voice audio or the phone's voice) and the chime natively.
+/// Audio from inside the web view follows the ring/silent switch; native audio uses the app's
+/// .playback session, so Fluff is heard on silent and music keeps playing underneath.
+@objc(FluffAudioPlugin)
+public class FluffAudioPlugin: CAPPlugin, CAPBridgedPlugin {
+    public let identifier = "FluffAudioPlugin"
+    public let jsName = "FluffAudio"
+    public let pluginMethods: [CAPPluginMethod] = [
+        CAPPluginMethod(name: "play", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "speak", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "chime", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "stop", returnType: CAPPluginReturnPromise)
+    ]
+    private var voicePlayer: AVAudioPlayer?
+    private var chimePlayer: AVAudioPlayer?
+    private let synth = AVSpeechSynthesizer()
+
+    private func prepare() {
+        useLoudAudio()
+        keepLoudspeaker()
+    }
+
+    private func stopVoice() {
+        voicePlayer?.stop()
+        voicePlayer = nil
+        if synth.isSpeaking { synth.stopSpeaking(at: .immediate) }
+    }
+
+    /// Plays MP3 (or other) audio passed in as base64.
+    @objc func play(_ call: CAPPluginCall) {
+        guard let b64 = call.getString("data"), let data = Data(base64Encoded: b64) else {
+            call.reject("No audio to play.")
+            return
+        }
+        DispatchQueue.main.async {
+            self.prepare()
+            self.stopVoice()
+            do {
+                let player = try AVAudioPlayer(data: data)
+                player.prepareToPlay()
+                player.play()
+                self.voicePlayer = player
+                call.resolve()
+            } catch {
+                call.reject("Couldn't play the audio: \(error.localizedDescription)")
+            }
+        }
+    }
+
+    /// Speaks text with one of the phone's voices.
+    @objc func speak(_ call: CAPPluginCall) {
+        let text = call.getString("text") ?? ""
+        let voiceId = call.getString("voice") ?? ""
+        let rate = call.getFloat("rate") ?? 1.0
+        let pitch = call.getFloat("pitch") ?? 1.0
+        DispatchQueue.main.async {
+            self.prepare()
+            self.stopVoice()
+            guard !text.isEmpty else { call.resolve(); return }
+            let utterance = AVSpeechUtterance(string: text)
+            if !voiceId.isEmpty, let voice = AVSpeechSynthesisVoice(identifier: voiceId) {
+                utterance.voice = voice
+            } else {
+                utterance.voice = AVSpeechSynthesisVoice(language: "en-US")
+            }
+            utterance.rate = min(AVSpeechUtteranceMaximumSpeechRate, AVSpeechUtteranceDefaultSpeechRate * rate)
+            utterance.pitchMultiplier = pitch
+            self.synth.speak(utterance)
+            call.resolve()
+        }
+    }
+
+    /// The little "chore done" chime (the same sound as the reminders).
+    @objc func chime(_ call: CAPPluginCall) {
+        DispatchQueue.main.async {
+            guard let url = Bundle.main.url(forResource: "fluff-chime", withExtension: "wav", subdirectory: "public") else {
+                call.reject("Chime sound not found.")
+                return
+            }
+            self.prepare()
+            do {
+                let player = try AVAudioPlayer(contentsOf: url)
+                player.volume = 0.8
+                player.play()
+                self.chimePlayer = player
+                call.resolve()
+            } catch {
+                call.reject("Couldn't play the chime: \(error.localizedDescription)")
+            }
+        }
+    }
+
+    @objc func stop(_ call: CAPPluginCall) {
+        DispatchQueue.main.async {
+            self.stopVoice()
+            call.resolve()
         }
     }
 }

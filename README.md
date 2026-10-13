@@ -84,7 +84,9 @@ A new house starts bare. Each room shows dotted outlines of its furniture: what 
 
 Tap **Decorate** on the House tab, pick a piece from the box, then tap a spot in any room to put it there. Tap a placed piece to turn it, move it or put it back in the box. Tap an outline to see what unlocks it. The Rewards tab shows the whole ladder. Placed decor syncs to every phone.
 
-Tap **Edit floor plan** to drag rooms into the shape of your house and resize them (each square is about a meter). Floor tabs let you add a basement, an upstairs and a third floor; tap a room to move it to another floor, with a faint outline of the floor below for lining things up. On the House tab, **All floors** stacks them like an open dollhouse (a basement shows as a cutaway in the lawn), or pick one floor to see just that level. Patios and yards get deck boards and a picket fence instead of walls. The plan syncs to every phone. The house is drawn with Three.js (in `vendor/`, MIT license) from `house.js`, so it works offline.
+Room labels show names where there's space and just the room's emoji where it's crowded. Homes with more than one floor open on the main floor.
+
+Tap **Floor plan** to drag rooms into the shape of your house and resize them (each square is about a meter), or **+ Add a room** to add one right there. Rooms that end up on top of each other are moved to the nearest free spot. Floor tabs let you add a basement, an upstairs and a third floor; tap a room to move it to another floor, with a faint outline of the floor below for lining things up. On the House tab, **All floors** stacks them like an open dollhouse (a basement shows as a cutaway in the lawn), or pick one floor to see just that level. Patios and yards get deck boards and a picket fence instead of walls. The plan syncs to every phone. The house is drawn with Three.js (in `vendor/`, MIT license) from `house.js`, so it works offline.
 
 ## Ask Fluff and focus areas
 
@@ -126,7 +128,7 @@ Every phone connected to the same helper can share one household: rooms, chore l
 
 ## iPhone app (TestFlight)
 
-The `ios-app` folder wraps this same web app in a native iPhone app using Capacitor. The app bundles `index.html`, so there's still only one copy of the app to edit. Inside the app, Fluff talks even when the silent switch is on, the screen stays awake in Coach Mode, chores buzz when you finish them, and Ask Fluff uses Apple's speech recognition.
+The `ios-app` folder wraps this same web app in a native iPhone app using Capacitor. The app bundles `index.html`, so there's still only one copy of the app to edit. Inside the app, Fluff's voice and the chime play natively, so Fluff talks even when the silent switch is on (and music keeps playing underneath), the screen stays awake in Coach Mode, chores buzz when you finish them, and Ask Fluff uses Apple's speech recognition.
 
 Reminders in the app don't need the helper or KV at all: the phone plans the next two weeks of reminders (daily nudge, streak saver, Sunday recap, flash bonuses) and iOS delivers them, with Fluff's chime and the open-chore count on the app icon. The plan is redone whenever a chore is done, the household syncs or a setting changes. One limit: if someone else finishes a chore on another phone, this phone finds out the next time the app is opened.
 

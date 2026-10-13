@@ -261,6 +261,8 @@ h1,h2,h3{font-family:var(--display);line-height:1.1;margin:0}
 .house-labels.off{display:none}
 .house-btns{display:flex;gap:6px}
 .btn .pill{background:#fff;color:var(--leaf);border-radius:999px;min-width:20px;height:20px;display:inline-grid;place-items:center;font-size:12px;padding:0 6px;margin-left:6px}
+.house-wrap.with-floors{height:calc(100vh - var(--safe-t) - var(--safe-b) - 320px)}
+.house-wrap.decorating.with-floors{height:calc(100vh - var(--safe-t) - var(--safe-b) - 450px)}
 .house-wrap.decorating{box-shadow:0 0 0 4px #FFE066,0 4px 0 var(--ledge);height:calc(100vh - var(--safe-t) - var(--safe-b) - 400px);min-height:280px}
 .decor-tray{display:flex;align-items:flex-start;gap:8px;overflow-x:auto;padding:4px 2px 10px;margin:8px -4px 0;scroll-snap-type:x proximity;-webkit-overflow-scrolling:touch}
 .tray-item{flex:none;width:92px;border:0;border-radius:18px;background:var(--paper);box-shadow:0 3px 0 var(--ledge);padding:8px 6px;display:flex;flex-direction:column;align-items:center;gap:2px;font-weight:800;color:var(--ink);scroll-snap-align:start}
@@ -275,11 +277,15 @@ h1,h2,h3{font-family:var(--display);line-height:1.1;margin:0}
 .decor-acts{display:grid;gap:8px}
 .decor .k{display:block;font-size:11px;font-weight:700;color:var(--ink-soft);text-transform:uppercase;letter-spacing:.03em}
 .house-tag{position:absolute;left:0;top:0;pointer-events:auto;display:flex;align-items:center;gap:4px;border:0;border-radius:999px;background:rgba(255,255,255,.9);padding:2px 8px 2px 5px;font-weight:800;font-size:11.5px;color:var(--ink);box-shadow:0 2px 0 rgba(0,0,0,.1);white-space:nowrap}
-.house-tag span{font-size:13px}
+.house-tag .e{font-size:13px}
+.house-tag.mini{padding:2px 5px}
+.house-tag.mini .nm{display:none}
+.house-tag.off{visibility:hidden}
 .house-tag b{background:var(--berry);color:#fff;border-radius:999px;min-width:19px;height:19px;display:grid;place-items:center;font-size:11px;padding:0 5px}
 .house-tag.clean{background:#FFF4C4}
 .house-msg{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px;text-align:center;padding:24px;font-weight:700;color:var(--ink-soft)}
 .house-hint{font-size:13px;font-weight:700;color:var(--ink-soft);text-align:center;margin:10px 4px 0}
+.house-hint.one{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .plan-ed{position:fixed;inset:0;z-index:82;background:var(--meadow);display:flex;flex-direction:column;align-items:center;gap:12px;padding:calc(var(--safe-t) + 14px) 16px calc(var(--safe-b) + 16px);overflow:auto}
 .plan-ed .tip{background:var(--bubble);border:3px solid var(--bubble-edge);border-radius:20px;padding:10px 14px;font-weight:700;max-width:560px}
 .plan-ed .row{width:100%;max-width:560px}
@@ -294,6 +300,10 @@ h1,h2,h3{font-family:var(--display);line-height:1.1;margin:0}
 .floor-chips button[aria-selected="true"]{background:var(--leaf);color:#fff;box-shadow:0 2px 0 var(--leaf-dark)}
 .floor-chips button.add{background:transparent;box-shadow:inset 0 0 0 2px var(--line);color:var(--leaf)}
 .plan-floors{justify-content:center;max-width:560px;margin:0}
+.plan-add{width:100%;max-width:560px;background:var(--paper);border-radius:20px;padding:12px 14px;box-shadow:0 3px 0 var(--ledge);display:grid;gap:10px}
+.plan-add[hidden],.plan-add-btn[hidden]{display:none}
+.plan-add input{font:inherit;font-weight:700;border:2px solid var(--line);border-radius:14px;padding:10px 12px}
+.plan-add .row{display:flex;gap:8px}.plan-add .row .btn{flex:1}
 .plan-ghost{position:absolute;border:2px dashed #B9DCC4;border-radius:8px;color:#9DBBA7;font-size:11px;font-weight:700;display:flex;align-items:flex-end;justify-content:center;padding:2px;pointer-events:none}
 .plan-room.picked{box-shadow:0 0 0 4px var(--sun)}
 .plan-empty{position:absolute;inset:0;display:grid;place-items:center;text-align:center;padding:30px;font-weight:700;color:var(--ink-soft);pointer-events:none}
@@ -348,13 +358,15 @@ h1,h2,h3{font-family:var(--display);line-height:1.1;margin:0}
 @keyframes blink{50%{opacity:.3}}
 .chip.status{min-width:0;flex:0 1 auto;display:inline-flex}
 .coach .hud2{position:relative;padding:8px 14px 0}
-.coach .setup{position:relative;margin:12px 0 0;width:calc(100% - 28px);color:var(--ink);background:rgba(255,255,255,.96);border-radius:24px;padding:14px 16px 16px;box-shadow:0 6px 0 rgba(0,0,0,.12);display:flex;flex-direction:column;gap:8px;max-width:440px;align-self:center;max-height:calc(100vh - 330px);overflow:auto}
+.coach.setting-up .bottom{display:none}
+.coach .setup{position:absolute;left:14px;right:14px;bottom:calc(var(--safe-b) + 14px);margin:0 auto;color:var(--ink);background:rgba(255,255,255,.96);border-radius:24px;padding:14px 16px 16px;box-shadow:0 6px 0 rgba(0,0,0,.12);display:flex;flex-direction:column;gap:8px;max-width:440px;max-height:calc(100vh - var(--safe-t) - var(--safe-b) - 150px);overflow:auto}
 .coach .setup[hidden]{display:none}
 .setup .st-title{font-size:19px;font-weight:900}
-.setup img{width:100%;max-height:150px;object-fit:cover;border-radius:16px;display:block}
+.setup img{width:100%;max-height:min(150px,22vh);object-fit:cover;border-radius:16px;display:block;flex:none}
 .setup .st-cap{font-size:12.5px;font-weight:800;color:var(--ink-soft);margin-top:-4px}
 .setup .st-text{margin:0;font-weight:700;color:var(--ink-soft);display:flex;align-items:center;gap:8px}
-.setup .st-tips{margin:0;padding-left:20px;font-weight:600;font-size:14.5px;line-height:1.35;display:grid;gap:4px}
+.setup .st-tips{margin:0;padding-left:20px;font-weight:600;font-size:14.5px;line-height:1.3;display:grid;gap:2px}
+.setup > .btn,.setup .row{flex:none}
 .setup .row{display:flex;gap:8px}.setup .row .btn{flex:1}
 .setup .spin{width:18px;height:18px;border-radius:50%;border:3px solid var(--line);border-top-color:var(--leaf);animation:spin .8s linear infinite;flex:none}
 @keyframes spin{to{transform:rotate(360deg)}}
@@ -629,12 +641,36 @@ function pop(text) {
   setTimeout(() => p.remove(), 1500);
 }
 let actx = null;
+// In the iPhone app, Fluff's voice, phone voice and chime play natively. Web audio inside the app follows
+// the ring/silent switch; native audio plays even on silent and mixes with music.
+const FA = NATIVE && window.Capacitor && typeof window.Capacitor.registerPlugin === 'function' ? window.Capacitor.registerPlugin('FluffAudio') : null;
+let faBroken = false;
+async function nativeAudio(method, args) {
+  if (!FA || faBroken) return false;
+  try { await FA[method](args || {}); return true; }
+  catch (e) { if (/not implemented|unimplemented|not available/i.test(String(e && (e.code || e.message)))) faBroken = true; return false; }
+}
+function b64FromBuffer(buf) {
+  const bytes = new Uint8Array(buf); let bin = '';
+  for (let i = 0; i < bytes.length; i += 0x8000) bin += String.fromCharCode.apply(null, bytes.subarray(i, i + 0x8000));
+  return btoa(bin);
+}
+function stopVoice() {
+  if (AI.source) { try { AI.source.stop(); } catch (e) { /* already stopped */ } AI.source = null; }
+  if (hasSpeech) speechSynthesis.cancel();
+  if (FA && !faBroken) FA.stop().catch(() => {});
+}
 function unlockAudio() {
   try { actx = actx || new (window.AudioContext || window.webkitAudioContext)(); actx.resume(); } catch (e) { actx = null; }
 }
 function chime() {
   haptic('SUCCESS');
-  if (!S.settings.sound || !actx) return;
+  if (!S.settings.sound) return;
+  if (FA && !faBroken) { nativeAudio('chime').then((ok) => { if (!ok) webChime(); }); return; }
+  webChime();
+}
+function webChime() {
+  if (!actx) return;
   const t = actx.currentTime;
   [[784, 0], [1175, 0.09], [1568, 0.18]].forEach(([f, dt]) => {
     const o = actx.createOscillator(), g = actx.createGain();
@@ -671,7 +707,16 @@ function voiceLabel(v) {
 }
 if (hasSpeech) { speechSynthesis.getVoices(); speechSynthesis.addEventListener('voiceschanged', () => speechSynthesis.getVoices()); }
 function sayOnPhone(text, voiceId) {
-  if (!hasSpeech || !text) return;
+  if (!text) return;
+  if (FA && !faBroken) {
+    const v = hasSpeech ? pickVoice(voiceId) : null;
+    nativeAudio('speak', { text, voice: v ? v.voiceURI : '', rate: 1.0, pitch: 1.05 }).then((ok) => { if (!ok) webSayOnPhone(text, voiceId); });
+    return;
+  }
+  webSayOnPhone(text, voiceId);
+}
+function webSayOnPhone(text, voiceId) {
+  if (!hasSpeech) return;
   try {
     speechSynthesis.cancel();
     const u = new SpeechSynthesisUtterance(text);
@@ -715,6 +760,10 @@ async function aiAudio(voice, text) {
   return buf;
 }
 async function playBuffer(buf, my) {
+  if (FA && !faBroken) {
+    if (my !== AI.token) return;
+    if (await nativeAudio('play', { data: b64FromBuffer(buf) })) { AI.source = { stop() { FA.stop().catch(() => {}); } }; return; }
+  }
   if (!actx) unlockAudio();
   if (!actx) throw new Error('no audio');
   const audio = await actx.decodeAudioData(buf.slice(0));
@@ -728,8 +777,7 @@ async function say(text, voiceId = currentVoiceId()) {
   text = cleanForSpeech(text);
   if (!text) return;
   const my = ++AI.token;
-  if (AI.source) { try { AI.source.stop(); } catch (e) { /* ignore */ } }
-  if (hasSpeech) speechSynthesis.cancel();
+  stopVoice();
   if (voiceId && voiceId.startsWith('el:') && api.live) {
     try { await playBuffer(await aiAudio(voiceId.slice(3), text), my); return; }
     catch (e) {
@@ -1111,7 +1159,7 @@ function renderRoom() {
 /* ---------- 3D house (House tab) ----------
    The drawing lives in house.js and is only loaded when the tab opens. Here: room types,
    the floor plan (synced on each room as room.plan, in meters) and the plan editor. */
-const HOUSE = { mod: null, ctrl: null, loading: null, sig: '', floor: 'all', decorating: false, placing: null, fresh: null };
+const HOUSE = { mod: null, ctrl: null, loading: null, sig: '', floor: 'auto', decorating: false, placing: null, fresh: null };
 const FLOORS = [[-1, 'Basement'], [0, 'Main floor'], [1, 'Upstairs'], [2, 'Third floor']];
 const floorName = (f) => (FLOORS.find(([n]) => n === f) || [0, 'Main floor'])[1];
 const TYPE_RULES = [
@@ -1130,17 +1178,25 @@ const TYPE_SIZE = { game: [5, 4], living: [5, 4], kitchen: [4, 3], bedroom: [4, 
 const PLAN_W = 16, PLAN_D = 16;
 // Saved plans are kept; rooms without one get the first free spot on their floor, row by row.
 // plan = { x, z, w, d, f } in meters; f is the floor (-1 basement, 0 main, 1 upstairs, 2 third).
+// Finds a free spot on a floor: first at the room's usual size, then a bit smaller, then past the edge of the grid.
+function findSpot(taken, w, d, f) {
+  const free = (c) => !taken.some((b) => (b.f || 0) === f && c.x < b.x + b.w && b.x < c.x + c.w && c.z < b.z + b.d && b.z < c.z + c.d);
+  for (let shrink = 0; shrink < 3; shrink++) {
+    const ww = Math.max(2, w - shrink), dd = Math.max(2, d - shrink);
+    for (let z = 0; z <= PLAN_D - dd; z++) for (let x = 0; x <= PLAN_W - ww; x++) { const c = { x, z, w: ww, d: dd, f }; if (free(c)) return c; }
+  }
+  return { x: 0, z: Math.max(0, ...taken.filter((t) => (t.f || 0) === f).map((t) => t.z + t.d)), w, d, f };
+}
 function autoPlans(rooms, fresh = false) {
   const plans = {}, taken = [];
   const overlaps = (a) => taken.some((b) => (b.f || 0) === (a.f || 0) && a.x < b.x + b.w && b.x < a.x + a.w && a.z < b.z + b.d && b.z < a.z + a.d);
-  rooms.forEach((r) => { if (!fresh && r.plan) { plans[r.id] = { f: 0, ...r.plan }; taken.push(plans[r.id]); } });
+  // Saved plans stay put, unless one sits on top of another room (then it moves to the nearest free spot).
+  rooms.forEach((r) => { if (!fresh && r.plan) { const p = { f: 0, ...r.plan }; if (!overlaps(p)) { plans[r.id] = p; taken.push(p); } } });
   rooms.forEach((r) => {
     if (plans[r.id]) return;
     const f = (r.plan && r.plan.f) || 0;
-    const [w, d] = TYPE_SIZE[roomType(r)] || TYPE_SIZE.other;
-    let spot = null;
-    for (let z = 0; z <= PLAN_D - d && !spot; z++) for (let x = 0; x <= 12 - w && !spot; x++) { const c = { x, z, w, d, f }; if (!overlaps(c)) spot = c; }
-    spot = spot || { x: 0, z: Math.max(0, ...taken.filter((t) => (t.f || 0) === f).map((t) => t.z + t.d)), w, d, f };
+    const [w, d] = r.plan && !fresh ? [r.plan.w, r.plan.d] : TYPE_SIZE[roomType(r)] || TYPE_SIZE.other;
+    const spot = findSpot(taken, w, d, f);
     plans[r.id] = spot; taken.push(spot);
   });
   return plans;
@@ -1152,13 +1208,20 @@ function lockedModels() {
   UNLOCKS.forEach((u) => { if (!S.unlocked.includes(u.id)) u.models.forEach((m) => { if (!out[m]) out[m] = { id: u.id, e: u.e, n: u.n, c: u.c }; }); });
   return out;
 }
+// Which floor the House tab shows. Homes with more than one floor open on the main floor, which is
+// much easier to read than every floor stacked up; "All floors" is one tap away.
+function houseFloor(floors) {
+  if (floors.length < 2) return 'all';
+  if (HOUSE.floor === 'all') return 'all';
+  if (typeof HOUSE.floor === 'number' && floors.includes(HOUSE.floor)) return HOUSE.floor;
+  return floors.includes(0) ? 0 : floors[0];
+}
 function houseModel() {
   const plans = autoPlans(S.rooms);
   const floors = usedFloors(plans);
-  if (HOUSE.floor !== 'all' && !floors.includes(HOUSE.floor)) HOUSE.floor = 'all';
   const placing = HOUSE.decorating && HOUSE.placing && unlockById(HOUSE.placing);
   return {
-    floor: floors.length > 1 ? HOUSE.floor : 'all',
+    floor: houseFloor(floors),
     persona: personaId(),
     locked: lockedModels(),
     decorating: HOUSE.decorating,
@@ -1175,9 +1238,9 @@ function houseModel() {
 }
 function renderHouse() {
   const floors = usedFloors(autoPlans(S.rooms));
-  if (HOUSE.floor !== 'all' && !floors.includes(HOUSE.floor)) HOUSE.floor = 'all';
+  const cur = houseFloor(floors);
   const chips = floors.length > 1 ? `<div class="floor-chips" role="tablist" aria-label="Floors">
-      ${[['all', 'All floors'], ...floors.map((f) => [f, floorName(f)])].map(([f, n]) => `<button role="tab" aria-selected="${HOUSE.floor === f}" data-act="house-floor" data-f="${f}">${n}</button>`).join('')}</div>` : '';
+      ${[...floors.map((f) => [f, floorName(f)]), ['all', 'All floors']].map(([f, n]) => `<button role="tab" aria-selected="${cur === f}" data-act="house-floor" data-f="${f}">${n}</button>`).join('')}</div>` : '';
   const box = decorBox(), inBox = box.reduce((a, d) => a + d.left, 0);
   const head = HOUSE.decorating
     ? `<div class="house-head"><h2 class="section-title" style="margin:0">Decorating</h2>
@@ -1198,11 +1261,11 @@ function renderHouse() {
         ${next ? `<div class="tray-item next"><span class="e">${next.e}</span><span class="n">Next: ${esc(next.n)}</span><b>${next.c - S.household.lifetime} ✦ to go</b></div>` : ''}</div>`;
   } else {
     const nu = nextUnlock();
-    foot = `<p class="house-hint">Spin it with a finger, tap a room to open it. ${nu ? `Dotted outlines fill in as you earn sparkles. Next: ${nu.e} ${esc(nu.n)}, ${nu.c - S.household.lifetime}&nbsp;✦&nbsp;away.` : 'Dust bunnies mean a room needs love; sparkles mean it shines.'}</p>`;
+    foot = `<p class="house-hint one">${nu ? `Outlines fill in as you earn. Next: ${nu.e} ${esc(nu.n)} in ${nu.c - S.household.lifetime}&nbsp;✦` : 'Tap a room to open it. Spin with a finger, pinch to zoom.'}</p>`;
   }
   app.innerHTML = topbar() + head + `
     ${chips}
-    <div class="house-wrap${HOUSE.decorating ? ' decorating' : ''}" id="houseWrap"><div class="house-msg">${fluffSVG()}<span>Building your house…</span></div></div>
+    <div class="house-wrap${HOUSE.decorating ? ' decorating' : ''}${chips ? ' with-floors' : ''}" id="houseWrap"><div class="house-msg">${fluffSVG()}<span>Building your house…</span></div></div>
     ${foot}`;
   mountHouse();
 }
@@ -1245,7 +1308,7 @@ function decorAction(act, roomId, idx) {
 async function mountHouse() {
   const wrap = $('#houseWrap');
   if (!wrap) return;
-  if (!S.rooms.length) { wrap.innerHTML = `<div class="house-msg">${fluffSVG()}<span>Add a room on the Rooms tab and your house appears here.</span></div>`; return; }
+  if (!S.rooms.length) { wrap.innerHTML = `<div class="house-msg">${fluffSVG()}<span>Add a room on the Rooms tab, or with <b>Floor plan</b>, and your house appears here.</span></div>`; return; }
   try {
     if (!HOUSE.mod) HOUSE.mod = await (HOUSE.loading = HOUSE.loading || import('./house.js'));
     if (!HOUSE.ctrl) {
@@ -1274,22 +1337,24 @@ async function mountHouse() {
   }
 }
 function openPlanEditor() {
-  if (!S.rooms.length) { toast('Add a room first.'); return; }
-  let plans = autoPlans(S.rooms);
-  let floor = HOUSE.floor === 'all' ? 0 : HOUSE.floor, picked = null;
+  const rooms = S.rooms.slice(); // rooms added here join S.rooms on Save
+  let plans = autoPlans(rooms);
+  let floor = typeof HOUSE.floor === 'number' ? HOUSE.floor : 0, picked = null;
   const extra = new Set(); // floors added in the editor that don't have rooms yet
   const cell = Math.floor(Math.min(window.innerWidth - 36, window.innerHeight - 330, 560) / PLAN_W);
   const ed = document.createElement('div');
   ed.className = 'plan-ed'; ed.setAttribute('role', 'dialog'); ed.setAttribute('aria-label', 'Edit floor plan');
-  ed.innerHTML = `<div class="tip">Drag rooms to match your house and drag the corner dot to resize. Each square is about a meter. Tap a room to move it to another floor.</div>
+  ed.innerHTML = `<div class="tip">Drag rooms into the shape of your house; drag the corner dot to resize. Each square is about a meter. Tap a room to move it to another floor.</div>
     <div class="floor-chips plan-floors"></div>
+    <button class="btn small plan-add-btn" data-pe="add">+ Add a room</button>
+    <div class="plan-add" hidden></div>
     <div class="plan-grid" style="width:${cell * PLAN_W}px;height:${cell * PLAN_D}px;background-size:${cell}px ${cell}px"></div>
     <div class="plan-move"></div>
     <div class="row"><button class="btn" data-pe="auto">Auto-arrange</button><button class="btn" data-pe="cancel">Cancel</button><button class="btn primary" data-pe="save">Save</button></div>`;
   document.body.appendChild(ed);
   const grid = ed.querySelector('.plan-grid');
   const onFloor = (r, f) => (plans[r.id].f || 0) === f;
-  const overlapsOthers = (r) => S.rooms.some((o) => { if (o.id === r.id || !onFloor(o, plans[r.id].f || 0)) return false; const p = plans[r.id], q = plans[o.id]; return p.x < q.x + q.w && q.x < p.x + p.w && p.z < q.z + q.d && q.z < p.z + p.d; });
+  const overlapsOthers = (r) => rooms.some((o) => { if (o.id === r.id || !onFloor(o, plans[r.id].f || 0)) return false; const p = plans[r.id], q = plans[o.id]; return p.x < q.x + q.w && q.x < p.x + p.w && p.z < q.z + q.d && q.z < p.z + p.d; });
   const draw = () => {
     const floors = [...new Set([...usedFloors(plans), ...extra, floor])].sort((a2, b2) => a2 - b2);
     const canUp = Math.max(...floors) < 2, canDown = Math.min(...floors) > -1;
@@ -1298,14 +1363,45 @@ function openPlanEditor() {
       + (canDown ? '<button class="add" data-pf-add="-1">+ Basement</button>' : '');
     // Faint outline of the floor below (or the main floor, from the basement) to line rooms up.
     const guide = floor > 0 ? floor - 1 : floor < 0 ? 0 : null;
-    const ghosts = guide === null ? '' : S.rooms.filter((r) => onFloor(r, guide)).map((r) => { const p = plans[r.id]; return `<div class="plan-ghost" style="left:${p.x * cell}px;top:${p.z * cell}px;width:${p.w * cell}px;height:${p.d * cell}px">${esc(r.name)}</div>`; }).join('');
-    grid.innerHTML = ghosts + S.rooms.filter((r) => onFloor(r, floor)).map((r) => {
+    const ghosts = guide === null ? '' : rooms.filter((r) => onFloor(r, guide)).map((r) => { const p = plans[r.id]; return `<div class="plan-ghost" style="left:${p.x * cell}px;top:${p.z * cell}px;width:${p.w * cell}px;height:${p.d * cell}px">${esc(r.name)}</div>`; }).join('');
+    grid.innerHTML = ghosts + rooms.filter((r) => onFloor(r, floor)).map((r) => {
       const p = plans[r.id];
       return `<div class="plan-room t-${roomType(r)}${overlapsOthers(r) ? ' bad' : ''}${picked === r.id ? ' picked' : ''}" data-id="${r.id}" style="left:${p.x * cell}px;top:${p.z * cell}px;width:${p.w * cell}px;height:${p.d * cell}px">
         <span>${esc(r.emoji)} ${esc(r.name)}</span><small>${p.w}×${p.d}</small><i class="plan-handle" data-id="${r.id}"></i></div>`;
-    }).join('') + (S.rooms.some((r) => onFloor(r, floor)) ? '' : `<div class="plan-empty">No rooms on the ${floorName(floor).toLowerCase()} yet. Tap a room on another floor, then move it here.</div>`);
-    const pr = picked && S.rooms.find((r) => r.id === picked);
+    }).join('') + (rooms.some((r) => onFloor(r, floor)) ? '' : `<div class="plan-empty">No rooms on the ${floorName(floor).toLowerCase()} yet. Tap a room on another floor, then move it here.</div>`);
+    const pr = picked && rooms.find((r) => r.id === picked);
     ed.querySelector('.plan-move').innerHTML = pr ? `<span>Move ${esc(pr.name)} to:</span>${floors.map((f) => `<button ${f === (plans[pr.id].f || 0) ? 'disabled' : ''} data-pm="${f}">${floorName(f)}</button>`).join('')}` : '';
+  };
+  // Add a room right here: name and icon, dropped into the first free spot on this floor.
+  const addBox = ed.querySelector('.plan-add');
+  let addEmoji = ROOM_EMOJI[0];
+  const openAdd = () => {
+    addBox.hidden = false;
+    const where = { '-1': 'in the basement', 0: 'on the main floor', 1: 'upstairs', 2: 'on the third floor' }[floor] || '';
+    ed.querySelector('.plan-add-btn').hidden = true;
+    addBox.innerHTML = `<b>New room ${where}</b>
+      <input id="paName" placeholder="Room name, like Garage" maxlength="24" aria-label="Room name">
+      <div class="emoji-pick">${ROOM_EMOJI.map((e2, i) => `<button type="button" data-pa="emo" data-e="${e2}" aria-pressed="${i === 0}">${e2}</button>`).join('')}</div>
+      <div class="row"><button class="btn" data-pa="cancel">Cancel</button><button class="btn primary" data-pa="add">Add room</button></div>`;
+    addEmoji = ROOM_EMOJI[0];
+    const inp = addBox.querySelector('#paName');
+    inp.addEventListener('keydown', (e2) => { if (e2.key === 'Enter') addRoomAction({ dataset: { pa: 'add' } }); });
+    setTimeout(() => inp.focus(), 50);
+  };
+  const addRoomAction = (t) => {
+    if (t.dataset.pa === 'emo') { addEmoji = t.dataset.e; addBox.querySelectorAll('[data-pa=emo]').forEach((b2) => b2.setAttribute('aria-pressed', String(b2 === t))); return; }
+    if (t.dataset.pa === 'cancel') { addBox.hidden = true; addBox.innerHTML = ''; ed.querySelector('.plan-add-btn').hidden = false; return; }
+    const inp = addBox.querySelector('#paName');
+    const name = inp.value.trim();
+    if (!name) { inp.focus(); return; }
+    const r = { id: uid(), name, emoji: addEmoji, shine: 50, shineAt: Date.now(), created: Date.now() };
+    const [w, d] = TYPE_SIZE[roomType(r)] || TYPE_SIZE.other;
+    plans[r.id] = findSpot(Object.values(plans), w, d, floor);
+    rooms.push(r);
+    picked = r.id;
+    addBox.hidden = true; addBox.innerHTML = ''; ed.querySelector('.plan-add-btn').hidden = false;
+    draw();
+    toast(`Added ${name}. Drag it into place, then Save.`);
   };
   draw();
   let drag = null;
@@ -1329,13 +1425,18 @@ function openPlanEditor() {
   grid.addEventListener('pointerup', () => { if (drag && !drag.moved) { picked = picked === drag.id ? null : drag.id; draw(); } drag = null; });
   grid.addEventListener('pointercancel', () => { drag = null; });
   ed.addEventListener('click', (e) => {
-    const t = e.target.closest('[data-pf], [data-pf-add], [data-pm], [data-pe]');
+    const t = e.target.closest('[data-pf], [data-pf-add], [data-pm], [data-pe], [data-pa]');
     if (!t) return;
+    if (t.dataset.pa) { addRoomAction(t); return; }
+    if (t.dataset.pe === 'add') { openAdd(); return; }
     if (t.dataset.pf !== undefined) { floor = Number(t.dataset.pf); picked = null; draw(); return; }
     if (t.dataset.pfAdd !== undefined) { floor = Number(t.dataset.pfAdd); extra.add(floor); picked = null; draw(); return; }
     if (t.dataset.pm !== undefined) { plans[picked].f = Number(t.dataset.pm); floor = plans[picked].f; draw(); return; }
-    if (t.dataset.pe === 'auto') { const keep = Object.fromEntries(Object.entries(plans).map(([id, p]) => [id, p.f || 0])); plans = autoPlansFresh(S.rooms, keep); draw(); return; }
-    if (t.dataset.pe === 'save') { S.rooms.forEach((r) => { r.plan = { ...plans[r.id] }; }); save(); toast('Floor plan saved'); }
+    if (t.dataset.pe === 'auto') { const keep = Object.fromEntries(Object.entries(plans).map(([id, p]) => [id, p.f || 0])); plans = autoPlansFresh(rooms, keep); draw(); return; }
+    if (t.dataset.pe === 'save') {
+      rooms.forEach((r) => { if (!S.rooms.includes(r)) S.rooms.push(r); r.plan = { ...plans[r.id] }; });
+      save(); toast('Floor plan saved');
+    }
     ed.remove();
     if (ui.view === 'house') render();
   });
@@ -1345,12 +1446,7 @@ function autoPlansFresh(rooms, floors) {
   const plans = {}, taken = [];
   rooms.forEach((r) => {
     const f = floors[r.id] || 0, [w, d] = TYPE_SIZE[roomType(r)] || TYPE_SIZE.other;
-    let spot = null;
-    for (let z = 0; z <= PLAN_D - d && !spot; z++) for (let x = 0; x <= 12 - w && !spot; x++) {
-      const c = { x, z, w, d, f };
-      if (!taken.some((b) => b.f === f && c.x < b.x + b.w && b.x < c.x + c.w && c.z < b.z + b.d && b.z < c.z + c.d)) spot = c;
-    }
-    plans[r.id] = spot || { x: 0, z: 0, w, d, f }; taken.push(plans[r.id]);
+    plans[r.id] = findSpot(taken, w, d, f); taken.push(plans[r.id]);
   });
   return plans;
 }
@@ -2937,6 +3033,7 @@ function renderCoachTasks() {
 function showSetup(kind, a = '', b = '') {
   const el = $('#cSetup');
   if (!el) return;
+  if (C.el) C.el.classList.toggle('setting-up', !!kind);
   if (!kind) { el.hidden = true; el.innerHTML = ''; return; }
   el.hidden = false;
   const spots = coachSpots(), n = spotNumber(C.spot);
@@ -2945,8 +3042,8 @@ function showSetup(kind, a = '', b = '') {
     const first = !S.setupTipSeen;
     el.innerHTML = `<b class="st-title">${a ? esc(a) : spots.length > 1 ? `Spot ${n} of ${spots.length}` : 'Set me up'}</b>
       ${ph ? `<img src="${ph.dataUrl}" alt="Where to point the camera"><span class="st-cap">Point me at this view</span>` : ''}
-      ${first ? `<ol class="st-tips"><li><b>Up high</b> works best: a shelf, dresser or counter, leaning on something.</li><li><b>In a corner</b>, pointing into the room${ph ? ', like the photo' : ''}.</li><li><b>Room too big?</b> I'll do it one spot at a time.</li></ol>`
-        : `<p class="st-text">Up high in a corner works best, leaning on something.</p>`}
+      ${first ? `<ul class="st-tips"><li><b>Up high</b>, like a shelf or dresser</li><li><b>In a corner</b>, facing the room${ph ? ' like the photo' : ''}</li><li><b>Big room?</b> We'll go one spot at a time</li></ul>`
+        : `<p class="st-text">Up high in a corner, leaning on something.</p>`}
       <button class="btn sun" data-act="coach-ready">I'm set up</button>`;
   } else if (kind === 'checking') {
     el.innerHTML = `<b class="st-title">Hold still…</b><p class="st-text"><span class="spin"></span>Checking what I can see from here.</p>`;
@@ -3110,7 +3207,7 @@ function stopCoach() {
   if (C.stream) C.stream.getTracks().forEach((t) => t.stop());
   if (C.wake) { C.wake.release().catch(() => {}); C.wake = null; }
   if (NP.KeepAwake) NP.KeepAwake.allowSleep().catch(() => {});
-  if ('speechSynthesis' in window) speechSynthesis.cancel();
+  stopVoice();
   if (C.el) C.el.remove();
   Object.assign(C, { el: null, stream: null, video: null, ctx: null });
   render();

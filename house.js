@@ -140,7 +140,7 @@ const DEFAULTS = {
 };
 
 // Furniture the household hasn't earned yet shows as a see-through outline with dashed edges.
-const GHOST_FILL = new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.22, depthWrite: false });
+const GHOST_FILL = new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.16, depthWrite: false });
 const GHOST_LINE = new THREE.LineDashedMaterial({ color: 0x6f8f80, dashSize: 0.07, gapSize: 0.05, transparent: true, opacity: 0.85 });
 const EDGES = new Map();
 function ghostify(obj, info) {
@@ -211,7 +211,7 @@ export function createHouse({ onRoom, onFluff, onGhost, onPlace, onDecorTap } = 
     const w = el.clientWidth || 300, h = el.clientHeight || 300, a = w / h;
     // Fit the whole house (from any angle) across the narrower side of the screen.
     const need = view.radius + 0.6;
-    const half = Math.max((need * 0.86) / a, need * 0.72);
+    const half = Math.max((need * 0.94) / a, need * 0.72);
     camera.left = -half * a; camera.right = half * a; camera.top = half; camera.bottom = -half;
     camera.zoom = view.zoom;
     const r = 60;
@@ -219,6 +219,44 @@ export function createHouse({ onRoom, onFluff, onGhost, onPlace, onDecorTap } = 
     camera.position.y += view.targetY || 0;
     camera.lookAt(0, (view.targetY || 0) + 0.4, 0);
     camera.updateProjectionMatrix();
+    labelsDirty = true;
+  }
+  /* Labels: names where there's space, just the emoji pin where it's crowded, and nothing for rooms
+     hidden under a floor above. Worked out again whenever the view moves. */
+  let labelsDirty = true;
+  const occRay = new THREE.Raycaster(), camDir = new THREE.Vector3();
+  function layoutLabels() {
+    labelsDirty = false;
+    const w = el.clientWidth, h = el.clientHeight;
+    if (!w || !h) return;
+    camera.getWorldDirection(camDir);
+    const placed = [];
+    const overlaps = (a) => a.l < 2 || a.r > w - 2 || a.t < 2 || a.b > h - 2 || placed.some((b) => a.l < b.r && b.l < a.r && a.t < b.b && b.t < a.b);
+    const tags = [...labels.children].sort((a, b) => b._rank - a._rank);
+    for (const tag of tags) {
+      v.copy(tag._pos).project(camera);
+      const x = ((v.x + 1) / 2) * w, y = ((1 - v.y) / 2) * h;
+      // Hidden under another floor? Look from the label toward the camera for a floor in the way.
+      occRay.set(tag._pos, camDir.clone().negate());
+      const blocked = occRay.intersectObjects(floors, false).some((hit) => hit.object.userData.roomId !== tag._room && hit.distance > 0.05);
+      let mode = 'off';
+      if (!blocked && v.z < 1 && x > -20 && x < w + 20 && y > -10 && y < h + 10) {
+        if (!tag._fw) { tag.classList.remove('mini'); tag._fw = tag.offsetWidth || 120; tag._h = tag.offsetHeight || 24; tag.classList.add('mini'); tag._mw = tag.offsetWidth || 34; }
+        const rect = (wd, dx = 0, dy = 0) => ({ l: x + dx - wd / 2 - 3, r: x + dx + wd / 2 + 3, t: y + dy - tag._h / 2 - 2, b: y + dy + tag._h / 2 + 2, dx, dy });
+        const full = rect(tag._fw);
+        if (!overlaps(full)) { mode = 'full'; placed.push(full); }
+        else {
+          // Crowded: just the emoji pin, nudged a little if it has to be.
+          const step = tag._h + 4;
+          const mini = [[0, 0], [0, -step], [0, step], [-step, 0], [step, 0]].map(([dx, dy]) => rect(tag._mw, dx, dy)).find((r) => !overlaps(r));
+          if (mini) { mode = 'mini'; placed.push(mini); tag._dx = mini.dx; tag._dy = mini.dy; }
+        }
+      }
+      if (mode !== 'mini') tag._dx = tag._dy = 0;
+      tag.classList.toggle('mini', mode === 'mini');
+      tag.classList.toggle('off', mode === 'off');
+      tag.style.transform = `translate(-50%, -50%) translate(${x + (tag._dx || 0)}px, ${y + (tag._dy || 0)}px)`;
+    }
   }
 
   function build(model) {
@@ -226,6 +264,7 @@ export function createHouse({ onRoom, onFluff, onGhost, onPlace, onDecorTap } = 
     world.clear();
     anim = []; roomCenters = []; floors = []; ghosts = []; placed = [];
     labels.innerHTML = '';
+    labelsDirty = true;
     mode = { decorating: !!model.decorating, placing: model.placing || null };
     labels.classList.toggle('off', mode.decorating);
     // model.locked: { modelName: info } for furniture not earned yet (drawn as ghosts). Missing = earned.
@@ -243,7 +282,10 @@ export function createHouse({ onRoom, onFluff, onGhost, onPlace, onDecorTap } = 
     const span = Math.max(maxX - minX, maxZ - minZ);
     const ys = rooms.map(yOf), minY = Math.min(...ys), maxY = Math.max(...ys);
     view.targetY = (minY + maxY) / 2;
-    view.radius = Math.max(4.5, Math.hypot(maxX - minX, maxZ - minZ) / 2, (maxY - minY) / 2 + 2.5);
+    // Fit to the farthest room corner (an L-shaped house doesn't need the space of its whole bounding box).
+    let far = 0;
+    rooms.forEach(({ plan: p }) => [[p.x, p.z], [p.x + p.w, p.z], [p.x, p.z + p.d], [p.x + p.w, p.z + p.d]].forEach(([x, z]) => { far = Math.max(far, Math.hypot(x - cx, z - cz)); }));
+    view.radius = Math.max(4.5, far, (maxY - minY) / 2 + 2.5);
     const below = rooms.filter((r) => yOf(r) < 0);
     const underground = sel !== 'all' && sel < 0;
 
@@ -289,11 +331,12 @@ export function createHouse({ onRoom, onFluff, onGhost, onPlace, onDecorTap } = 
     }
     for (let i = 0; i < (underground ? 0 : 4); i++) world.add(cyl(0.35, 0.35, 0.05, 0xe8e2d4, -0.3 + (i % 2) * 0.5, -0.02, (maxZ - minZ) / 2 + 0.7 + i * 0.8));
 
-    rooms.forEach((r) => {
+    rooms.forEach((r, ri) => {
       const p = r.plan, x0 = p.x - cx, z0 = p.z - cz, w = p.w, d = p.d;
       const g = new THREE.Group();
       const y0 = yOf(r);
-      g.position.set(x0, y0, z0);
+      // A hair of height per room, so rooms drawn on top of each other never flicker.
+      g.position.set(x0, y0 + (ri % 7) * 0.004, z0);
       world.add(g);
       const floor = box(w, 0.16, d, FLOOR[r.type] || FLOOR.other, w / 2, -0.16, d / 2);
       floor.userData.roomId = r.id;
@@ -311,39 +354,56 @@ export function createHouse({ onRoom, onFluff, onGhost, onPlace, onDecorTap } = 
         posts.forEach(([px, pz]) => g.add(box(0.07, 0.42, 0.07, 0xffffff, px, 0, pz)));
         [[w / 2, 0.08, w, 0.05], [w / 2, d - 0.08, w, 0.05], [0.08, d / 2, 0.05, d], [w - 0.08, d / 2, 0.05, d]].forEach(([rx, rz, rw, rd]) => g.add(box(rw, 0.05, rd, 0xffffff, rx, 0.3, rz)));
       } else {
-        [[w / 2, wt / 2, w, wt], [w / 2, d - wt / 2, w, wt], [wt / 2, d / 2, wt, d - wt * 2], [w - wt / 2, d / 2, wt, d - wt * 2]].forEach(([wx, wz, ww, wd]) => {
+        // Front and back walls run the full width; side walls fit between them, and so do their caps.
+        [[w / 2, wt / 2, w, wt, 1], [w / 2, d - wt / 2, w, wt, 1], [wt / 2, d / 2, wt, d - wt * 2, 0], [w - wt / 2, d / 2, wt, d - wt * 2, 0]].forEach(([wx, wz, ww, wd, across]) => {
           g.add(box(ww, wh, wd, WALL, wx, 0, wz));
-          g.add(box(ww + 0.001, 0.05, wd + 0.04, WALL_TOP, wx, wh, wz));
+          g.add(across ? box(ww + 0.002, 0.05, wd + 0.04, WALL_TOP, wx, wh, wz) : box(ww + 0.04, 0.048, Math.max(0.05, wd - 0.06), WALL_TOP, wx, wh, wz));
         });
       }
 
       // Furniture: what Fluff saw in the photos, or a cozy default set for the room type.
+      // Each piece goes against its wall and then slides to the nearest free floor space, so nothing overlaps
+      // (overlapping pieces flicker). Pieces that don't fit are left out. One rug per room.
       const seen = (r.furniture || []).map((f) => [modelFor(f.item), f.spot]).filter(([m]) => m);
-      const list = seen.length ? seen : (DEFAULTS[r.type] || DEFAULTS.other);
-      const used = {};
-      const spotXZ = (spot, n) => {
-        const m = 0.75;
-        let fx = w / 2, fz = d / 2, rot = 0;
-        if (spot.includes('back')) { fz = m; rot = 0; }
-        if (spot.includes('front')) { fz = d - m; rot = Math.PI; }
-        if (spot.includes('left')) { fx = m; if (spot === 'left') rot = Math.PI / 2; }
-        if (spot.includes('right')) { fx = w - m; if (spot === 'right') rot = -Math.PI / 2; }
-        // Spread several things in the same spot along the wall.
-        const shift = (n % 2 ? 1 : -1) * Math.ceil(n / 2) * 0.95;
-        if (spot === 'left' || spot === 'right') fz += shift; else fx += shift;
-        return [Math.min(w - 0.4, Math.max(0.4, fx)), Math.min(d - 0.4, Math.max(0.4, fz)), rot];
-      };
+      let list = seen.length ? seen : (DEFAULTS[r.type] || DEFAULTS.other);
+      list = list.filter(([m], i) => m !== 'rug' || list.findIndex(([n]) => n === 'rug') === i);
+      const taken = [];
+      const inset = r.type === 'patio' ? 0.14 : wt + 0.03;
+      const hits = (a, flat) => taken.some((b) => b.flat === flat && a.x0 < b.x1 - 0.02 && b.x0 < a.x1 - 0.02 && a.z0 < b.z1 - 0.02 && b.z0 < a.z1 - 0.02);
+      const tmpBox = new THREE.Box3();
       list.forEach(([name, spot]) => {
         const make = MODELS[name];
         if (!make) return;
-        const n = used[spot] = (used[spot] || 0) + 1;
-        const [fx, fz, rot] = spotXZ(spot, n - 1);
+        if (name === 'car' && (w < 2.6 || d < 4)) return;
         const obj = name === 'counter' ? make(Math.min(2.6, w - 1.6)) : make();
-        const fitsCar = name !== 'car' || (w >= 2.6 && d >= 4);
-        if (!fitsCar) return;
-        obj.position.set(fx, 0, fz); obj.rotation.y = rot;
+        let rot = 0;
+        if (spot.includes('front')) rot = Math.PI;
+        if (spot === 'left') rot = Math.PI / 2;
+        if (spot === 'right') rot = -Math.PI / 2;
+        obj.rotation.y = rot; obj.position.set(0, 0, 0); obj.updateMatrixWorld(true);
+        tmpBox.setFromObject(obj);
+        const rel = { x0: tmpBox.min.x, x1: tmpBox.max.x, z0: tmpBox.min.z, z1: tmpBox.max.z };
+        const fw = rel.x1 - rel.x0, fd = rel.z1 - rel.z0;
+        if (fw > w - inset * 2 || fd > d - inset * 2) return; // too big for this room
+        // Where it wants to be: snug against its wall, or the middle.
+        let fx = w / 2 - (rel.x0 + rel.x1) / 2, fz = d / 2 - (rel.z0 + rel.z1) / 2;
+        if (spot.includes('back')) fz = inset - rel.z0;
+        if (spot.includes('front')) fz = d - inset - rel.z1;
+        if (spot.includes('left')) fx = inset - rel.x0;
+        if (spot.includes('right')) fx = w - inset - rel.x1;
+        const flat = name === 'rug' || name === 'rainbowrug';
+        const at = (x, z) => ({ x0: x + rel.x0, x1: x + rel.x1, z0: z + rel.z0, z1: z + rel.z1, flat });
+        const lo = { x: inset - rel.x0, z: inset - rel.z0 }, hi = { x: w - inset - rel.x1, z: d - inset - rel.z1 };
+        let best = null, bestD = Infinity;
+        for (let x = lo.x; x <= hi.x + 1e-6; x += 0.1) for (let z = lo.z; z <= hi.z + 1e-6; z += 0.1) {
+          const dd = (x - fx) ** 2 + (z - fz) ** 2;
+          if (dd < bestD && !hits(at(x, z), flat)) { best = [x, z]; bestD = dd; }
+        }
+        if (!best) return; // no room left for it
+        obj.position.set(best[0], flat ? 0.002 * taken.filter((t) => t.flat).length : 0, best[1]);
+        taken.push(at(best[0], best[1]));
         // Not earned yet: a dotted outline that fills in once the household unlocks it.
-        if (locked[name]) { ghostify(obj, locked[name]); if (name !== 'rug') ghosts.push(obj); }
+        if (locked[name]) { ghostify(obj, locked[name]); if (!flat) ghosts.push(obj); }
         g.add(obj);
       });
       // Decor the family placed from the decor box (room-relative meters, quarter turns).
@@ -406,10 +466,13 @@ export function createHouse({ onRoom, onFluff, onGhost, onPlace, onDecorTap } = 
       const tag = document.createElement('button');
       tag.className = 'house-tag' + (r.open ? ' has' : '') + (!r.open && shine >= 80 ? ' clean' : '');
       tag.dataset.room = r.id;
-      tag.innerHTML = `<span>${r.emoji || ''}</span>${escapeHTML(r.name)}${r.open ? `<b>${r.open}</b>` : ''}`;
+      tag.innerHTML = `<span class="e">${r.emoji || '🏠'}</span><span class="nm">${escapeHTML(r.name)}</span>${r.open ? `<b>${r.open}</b>` : ''}`;
+      tag.setAttribute('aria-label', r.name + (r.open ? `, ${r.open} chores` : ''));
       tag.addEventListener('click', (e) => { e.stopPropagation(); onRoom && onRoom(r.id); });
       labels.appendChild(tag);
       tag._pos = tagPos;
+      tag._room = r.id;
+      tag._rank = (r.open || 0) * 100 + w * d; // busiest rooms get their names shown first
     });
 
     // Fluff hops to whichever room needs the most help.
@@ -528,12 +591,7 @@ export function createHouse({ onRoom, onFluff, onGhost, onPlace, onDecorTap } = 
     anim.forEach((f) => f(t));
     moveFluff(t);
     renderer.render(scene, camera);
-    const w = el.clientWidth, h = el.clientHeight;
-    for (const tag of labels.children) {
-      v.copy(tag._pos).project(camera);
-      tag.style.transform = `translate(-50%, -50%) translate(${((v.x + 1) / 2) * w}px, ${((1 - v.y) / 2) * h}px)`;
-      tag.style.visibility = v.z < 1 ? 'visible' : 'hidden';
-    }
+    if (labelsDirty) layoutLabels();
     raf = requestAnimationFrame(frame);
   }
   function resize() {
