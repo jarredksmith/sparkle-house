@@ -677,6 +677,8 @@ function b64FromBuffer(buf) {
   for (let i = 0; i < bytes.length; i += 0x8000) bin += String.fromCharCode.apply(null, bytes.subarray(i, i + 0x8000));
   return btoa(bin);
 }
+// Fluff is mid-sentence, or a sheet (like Ask Fluff) is open: hold off on anything chatty.
+function fluffBusy() { return Date.now() < (AI.busyUntil || 0) || !!$('#sheet'); }
 function stopVoice() {
   if (AI.source) { try { AI.source.stop(); } catch (e) { /* already stopped */ } AI.source = null; }
   if (hasSpeech) speechSynthesis.cancel();
@@ -803,6 +805,9 @@ async function say(text, voiceId = currentVoiceId()) {
   if (!text) return;
   const my = ++AI.token;
   stopVoice();
+  // Roughly how long Fluff will be talking (about 13 letters a second, plus time to fetch the voice),
+  // so pep talk and surprise challenges wait their turn instead of talking over an answer.
+  AI.busyUntil = Date.now() + 1500 + (text.length / 13) * 1000;
   if (voiceId && voiceId.startsWith('el:') && api.live) {
     try { await playBuffer(await aiAudio(voiceId.slice(3), text), my); return; }
     catch (e) {
@@ -2430,6 +2435,7 @@ const LINES = {
     greet: ['Hi {name}! Which room are we tackling?'],
     greetList: ['Hi {name}! The {room} list is still waiting for you.'],
     greetNeedy: ['Hi {name}! The {room} could use some love.'],
+    firstUp: ["Start with this one: {task}!"],
     setup: ['Prop me up high in a corner, pointing where you took this photo. Then tap I\'m set up!'],
     spotNext: ['Spot done! Carry me to spot {n}, then tap I\'m set up.'],
     seeAll: ['I can see all {count} from here. Let\'s sparkle!'],
@@ -2464,6 +2470,7 @@ const LINES = {
     greet: ['Morning, recruit {name}! Pick a room. We move out on your command.'],
     greetList: ['Recruit {name}! Your {room} mission is still open. Get back out there!'],
     greetNeedy: ['Recruit {name}, the {room} is a disaster zone. Time to deploy.'],
+    firstUp: ["First target: {task}. Move!"],
     setup: ['Post me up high in a corner, aimed where that photo was taken. Tap I\'m set up when ready, recruit.'],
     spotNext: ['Sector cleared! Move me to spot {n} and tap I\'m set up.'],
     seeAll: ['All {count} in sight. Move out!'],
@@ -2498,6 +2505,7 @@ const LINES = {
     greet: ['Oh, hi {name}. I was napping. Which room are we pretending to care about?'],
     greetList: ['Hey {name}. The {room} list is still there. I checked. Twice. From bed.'],
     greetNeedy: ['{name}, the {room} looks like I feel. Just saying.'],
+    firstUp: ["Start with {task}. It's the easy one."],
     setup: ['Lean me somewhere high, facing where you took this photo. Tap I\'m set up. I\'ll be here. Resting.'],
     spotNext: ['This spot\'s done. Carry me to spot {n}. Gently. Then tap I\'m set up.'],
     seeAll: ['I can see all {count}. Unfortunately. Go.'],
@@ -2532,6 +2540,7 @@ const LINES = {
     greet: ['Ahoy, {name}! Which room be needin\' a good swabbin\'?'],
     greetList: ['Ahoy, {name}! The {room} still has treasure to plunder!'],
     greetNeedy: ['Shiver me timbers, {name}! The {room} be a shipwreck!'],
+    firstUp: ["First, {task}, matey!"],
     setup: ['Hoist me up high in a corner, facin\' where ye took this picture. Tap I\'m set up, matey!'],
     spotNext: ['This deck be clean! Haul me to spot {n} and tap I\'m set up.'],
     seeAll: ['All {count} in me spyglass. Hop to it!'],
@@ -2603,7 +2612,7 @@ function pepTick() {
   const mode = S.settings.pep;
   const T = PEP_TIMING[mode];
   const sess = S.sessions[C.roomId];
-  if (!T || !C.el || C.checking || !sess || !C.stream || CH.active || !C.ready) return;
+  if (!T || !C.el || C.checking || !sess || !C.stream || CH.active || !C.ready || fluffBusy()) return;
   const open = sess.tasks.filter((t) => !t.done);
   if (!open.length) return;
   const now = Date.now();
@@ -2624,7 +2633,7 @@ function pepAfterAward() {
   const open = sess.tasks.filter((t) => !t.done).length;
   if (!open) return; // the all-done celebration covers it
   setTimeout(() => {
-    if (!C.el || C.checking) return;
+    if (!C.el || C.checking || fluffBusy()) return;
     const unlocked = (mem.newUnlocks || []).shift();
     if (unlocked) return pepSay('unlock', { item: unlocked.n.toLowerCase() });
     const left = sess.tasks.filter((t) => !t.done).length;
@@ -2850,10 +2859,18 @@ function resetChallenge() {
   const b = $('#chBanner'); if (b) { b.hidden = true; b.classList.remove('hurry'); }
   const btn = $('#chBtn'); if (btn) btn.textContent = 'Challenge';
 }
-function surpriseChallenge() {
+async function surpriseChallenge() {
   const sess = S.sessions[C.roomId];
+  // Look again first, so the challenge never names something that's already been put away.
+  if (C.ready && !C.checking && spotOpen().some(inView)) {
+    C.lastPepAt = Date.now();
+    try { await runCheck(false, { silent: true }); } catch (e) { /* use what we know */ }
+    if (!C.el || CH.active || fluffBusy() || C.checking) return;
+    if (sess.tasks.every((t) => t.done)) { coachDone(); return; }
+  }
   const open = sess.tasks.filter((t) => !t.done);
-  const quick = open.filter((t) => (t.minutes || 2) <= 3);
+  const here = C.ready ? spotOpen().filter(inView) : [];
+  const quick = (here.length ? here : open).filter((t) => (t.minutes || 2) <= 3);
   const v = pepVars();
   if (quick.length && Math.random() < 0.6) {
     const t = quick[Math.floor(Math.random() * quick.length)];
@@ -3150,8 +3167,16 @@ function startSpot(msg) {
   renderCoachTasks();
   const open = spotOpen();
   if (open.length && !open.some(inView)) { C.saidOut = true; coachLine('Okay! Tap chores when you finish them. I\'ll keep watching.'); return; }
-  coachLine(msg || line('start', { room: (roomById(C.roomId) || { name: 'room' }).name.toLowerCase() }));
+  const first = firstChore();
+  const hello = msg || line('start', { room: (roomById(C.roomId) || { name: 'room' }).name.toLowerCase() });
+  coachLine(first ? `${hello} ${line('firstUp', { task: choreName(first) })}` : hello);
 }
+// The best chore to start with: one the camera can see, quick, and worth the most for the time.
+function firstChore() {
+  const list = spotOpen().filter(inView);
+  return list.sort((a, b) => (a.minutes || 2) - (b.minutes || 2) || b.points - a.points)[0] || null;
+}
+const choreName = (t) => t.title.replace(/[.!]$/, '').replace(/^\w/, (c) => c.toLowerCase());
 function moveToSpot(photo, msg) {
   C.spot = photo; C.ready = false; C.visible = null; C.base = null; C.saidOut = false; C.setup = 'place';
   showSetup('place', msg);
@@ -3210,6 +3235,8 @@ function coachTick() {
   if (!C.ready) return setStatus('', C.setup === 'checking' ? 'Looking around…' : 'Set me up');
   const gapLeft = Math.ceil((S.settings.minGap * 1000 - (now - C.lastCheck)) / 1000);
   if (C.checking) return setStatus('checking', 'Checking…');
+  // Someone working in view for a while: check anyway, so put-away things get noticed without stepping out.
+  if (C.activity && now - C.lastCheck > Math.max(30000, S.settings.minGap * 1500)) { runCheck(false); return; }
   if (C.motion > MOVE) return setStatus('moving', 'You\'re working');
   if (C.activity && gapLeft > 0) return setStatus('', `Check in ${gapLeft}s`);
   if (C.activity && C.motion < CALM && now - C.lastMotion > SETTLE_MS) { runCheck(false); return; }
@@ -3246,7 +3273,7 @@ async function runCheck(manual, opts = {}) {
     } else if (manual) {
       coachLine(res.feedback || line('noChange'));
     } else if (res.feedback) {
-      coachLine(res.feedback);
+      coachLine(res.feedback, !fluffBusy()); // shown always, said out loud unless Fluff is mid-answer
     }
     renderCoachTasks();
     if (sess.tasks.every((t) => t.done)) coachDone();
