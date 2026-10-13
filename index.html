@@ -165,6 +165,7 @@ h1,h2,h3{font-family:var(--display);line-height:1.1;margin:0}
 .decor .c{font-size:12px;font-weight:700;color:var(--ink-soft)}
 .decor.locked .e{filter:grayscale(1) brightness(.4);opacity:.35}
 .decor.locked{background:#F3FAF5;box-shadow:0 3px 0 #DCEDE1}
+.decor.locked .n{color:var(--ink-soft)}
 .next{margin:4px 0 14px 4px;font-weight:700;color:var(--ink-soft)}
 .board{list-style:none;margin:0;padding:0}
 .board li{display:flex;align-items:center;gap:10px;padding:8px 0;font-weight:800}
@@ -257,6 +258,22 @@ h1,h2,h3{font-family:var(--display);line-height:1.1;margin:0}
 .house-stage{position:absolute;inset:0}
 .house-stage canvas{display:block;width:100%;height:100%}
 .house-labels{position:absolute;inset:0;pointer-events:none;overflow:hidden}
+.house-labels.off{display:none}
+.house-btns{display:flex;gap:6px}
+.btn .pill{background:#fff;color:var(--leaf);border-radius:999px;min-width:20px;height:20px;display:inline-grid;place-items:center;font-size:12px;padding:0 6px;margin-left:6px}
+.house-wrap.decorating{box-shadow:0 0 0 4px #FFE066,0 4px 0 var(--ledge);height:calc(100vh - var(--safe-t) - var(--safe-b) - 400px);min-height:280px}
+.decor-tray{display:flex;align-items:flex-start;gap:8px;overflow-x:auto;padding:4px 2px 10px;margin:8px -4px 0;scroll-snap-type:x proximity;-webkit-overflow-scrolling:touch}
+.tray-item{flex:none;width:92px;border:0;border-radius:18px;background:var(--paper);box-shadow:0 3px 0 var(--ledge);padding:8px 6px;display:flex;flex-direction:column;align-items:center;gap:2px;font-weight:800;color:var(--ink);scroll-snap-align:start}
+.tray-item .e{font-size:30px;line-height:1.1}
+.tray-item .n{font-size:11.5px;line-height:1.15;text-align:center}
+.tray-item b{font-size:12px;color:var(--leaf)}
+.tray-item.on{background:#FFF4C4;box-shadow:0 0 0 3px #F2B321,0 3px 0 var(--ledge)}
+.tray-item:disabled{opacity:.45}
+.tray-item.next{background:transparent;box-shadow:inset 0 0 0 2px var(--line);color:var(--ink-soft)}
+.tray-item.next .e{filter:grayscale(1);opacity:.5}
+.tray-item.next b{color:var(--ink-soft);font-size:11px}
+.decor-acts{display:grid;gap:8px}
+.decor .k{display:block;font-size:11px;font-weight:700;color:var(--ink-soft);text-transform:uppercase;letter-spacing:.03em}
 .house-tag{position:absolute;left:0;top:0;pointer-events:auto;display:flex;align-items:center;gap:4px;border:0;border-radius:999px;background:rgba(255,255,255,.9);padding:2px 8px 2px 5px;font-weight:800;font-size:11.5px;color:var(--ink);box-shadow:0 2px 0 rgba(0,0,0,.1);white-space:nowrap}
 .house-tag span{font-size:13px}
 .house-tag b{background:var(--berry);color:#fff;border-radius:999px;min-width:19px;height:19px;display:grid;place-items:center;font-size:11px;padding:0 5px}
@@ -395,20 +412,58 @@ const dayKey = (t = Date.now()) => { const d = new Date(t); return d.getFullYear
 const PLAYER_COLORS = ['#FF8FA3', '#5BB8EA', '#F2B321', '#A98BEB', '#4FBF7E', '#FF9B5A'];
 const ROOM_EMOJI = ['🍳', '🛋️', '🛏️', '🛁', '🧺', '🧸', '💻', '🚗', '🌿', '🍽️', '📚', '🎮'];
 const ZONES = ['top-left', 'top', 'top-right', 'left', 'center', 'right', 'bottom-left', 'bottom', 'bottom-right'];
-const DECOR = [
-  { id: 'fern', e: '🪴', n: 'Potted fern', c: 40 },
-  { id: 'basket', e: '🧺', n: 'Woven basket', c: 100 },
-  { id: 'lamp', e: '💡', n: 'Cozy lamp', c: 180 },
-  { id: 'clock', e: '🕰️', n: 'Mantel clock', c: 280 },
-  { id: 'books', e: '📚', n: 'Book stack', c: 400 },
-  { id: 'tank', e: '🐠', n: 'Fish tank', c: 550 },
-  { id: 'chime', e: '🎐', n: 'Wind chime', c: 720 },
-  { id: 'piano', e: '🎹', n: 'Little piano', c: 950 },
-  { id: 'globe', e: '🌍', n: 'Desk globe', c: 1200 },
-  { id: 'tree', e: '🌳', n: 'Indoor tree', c: 1500 },
-  { id: 'rug', e: '🌈', n: 'Rainbow rug', c: 2000 },
-  { id: 'fort', e: '⛺', n: 'Blanket fort', c: 2600 }
+// The house unlock ladder. Everyone's chores add to one household total (nobody's points go down).
+// Furniture fills in the dotted outlines in the 3D house; decor goes in the decor box to place anywhere.
+const UNLOCKS = [
+  { id: 'f-rug', kind: 'furn', e: '🧶', n: 'Rugs', c: 10, models: ['rug'] },
+  { id: 'fern', kind: 'decor', e: '🪴', n: 'Potted fern', c: 25, models: ['plant'] },
+  { id: 'f-bed', kind: 'furn', e: '🛏️', n: 'Beds and nightstands', c: 45, models: ['bed', 'crib', 'sidetable'] },
+  { id: 'f-sofa', kind: 'furn', e: '🛋️', n: 'Sofas and armchairs', c: 70, models: ['sofa', 'armchair', 'coffeetable'] },
+  { id: 'lamp', kind: 'decor', e: '💡', n: 'Cozy lamp', c: 95, models: ['lamp'] },
+  { id: 'f-table', kind: 'furn', e: '🍽️', n: 'Tables and chairs', c: 120, models: ['table', 'chair'] },
+  { id: 'f-tv', kind: 'furn', e: '📺', n: 'TV and stand', c: 150, models: ['tv'] },
+  { id: 'basket', kind: 'decor', e: '🧺', n: 'Woven basket', c: 185, models: ['basket'] },
+  { id: 'f-kitchen', kind: 'furn', e: '🍳', n: 'Kitchen counters and appliances', c: 220, models: ['counter', 'stove', 'fridge', 'sink'] },
+  { id: 'f-bath', kind: 'furn', e: '🛁', n: 'Tub, toilet and vanity', c: 260, models: ['bathtub', 'toilet', 'vanity'] },
+  { id: 'clock', kind: 'decor', e: '🕰️', n: 'Mantel clock', c: 300, models: ['clock'] },
+  { id: 'f-storage', kind: 'furn', e: '🗄️', n: 'Dressers and shelves', c: 350, models: ['dresser', 'wardrobe', 'bookshelf', 'cabinet', 'shelf'] },
+  { id: 'f-desk', kind: 'furn', e: '💻', n: 'Desk', c: 400, models: ['desk'] },
+  { id: 'books', kind: 'decor', e: '📚', n: 'Book stack', c: 460, models: ['books'] },
+  { id: 'f-laundry', kind: 'furn', e: '🫧', n: 'Washer and dryer', c: 520, models: ['washer'] },
+  { id: 'tank', kind: 'decor', e: '🐠', n: 'Fish tank', c: 580, models: ['tank'] },
+  { id: 'f-fun', kind: 'furn', e: '🚗', n: 'Toy bins and the car', c: 650, models: ['toys', 'car'] },
+  { id: 'beanbag', kind: 'decor', e: '🫘', n: 'Beanbag', c: 730, models: ['beanbag'] },
+  { id: 'chime', kind: 'decor', e: '🎐', n: 'Wind chime', c: 820, models: ['chime'] },
+  { id: 'teddy', kind: 'decor', e: '🧸', n: 'Teddy bear', c: 920, models: ['teddy'] },
+  { id: 'piano', kind: 'decor', e: '🎹', n: 'Little piano', c: 1030, models: ['piano'] },
+  { id: 'globe', kind: 'decor', e: '🌍', n: 'Desk globe', c: 1150, models: ['globe'] },
+  { id: 'cactus', kind: 'decor', e: '🌵', n: 'Cactus', c: 1300, models: ['cactus'] },
+  { id: 'tree', kind: 'decor', e: '🌳', n: 'Indoor tree', c: 1480, models: ['tree'] },
+  { id: 'rug', kind: 'decor', e: '🌈', n: 'Rainbow rug', c: 1700, models: ['rainbowrug'] },
+  { id: 'fort', kind: 'decor', e: '⛺', n: 'Blanket fort', c: 2000, models: ['fort'] }
 ];
+const DECOR_ITEMS = UNLOCKS.filter((u) => u.kind === 'decor');
+const unlockById = (id) => UNLOCKS.find((u) => u.id === id);
+const BONUS_EVERY = 200; // every 200 household sparkles, one more copy of a decor piece lands in the box
+// How many of each decor piece the household has earned. Bonus copies cycle through whatever was unlocked
+// at that moment, so the count never changes after the fact.
+function decorCopies(total = S.household.lifetime) {
+  const n = {};
+  DECOR_ITEMS.forEach((d) => { if (total >= d.c) n[d.id] = 1; });
+  for (let k = 1; k * BONUS_EVERY <= total; k++) {
+    const pool = DECOR_ITEMS.filter((d) => d.c <= k * BONUS_EVERY);
+    if (pool.length) { const d = pool[(k - 1) % pool.length]; n[d.id] = (n[d.id] || 0) + 1; }
+  }
+  return n;
+}
+function decorPlaced() { const n = {}; S.rooms.forEach((r) => (r.decor || []).forEach((d) => { n[d.i] = (n[d.i] || 0) + 1; })); return n; }
+// What's still in the box (earned minus placed), in ladder order.
+function decorBox() {
+  const have = decorCopies(), used = decorPlaced();
+  return DECOR_ITEMS.filter((d) => have[d.id]).map((d) => ({ ...d, left: Math.max(0, have[d.id] - (used[d.id] || 0)), total: have[d.id] }));
+}
+function decorBoxCount() { return decorBox().reduce((a, d) => a + d.left, 0); }
+function nextUnlock() { return UNLOCKS.find((u) => !S.unlocked.includes(u.id)); }
 
 /* ---------- state ---------- */
 const STORE_KEY = 'sparklehouse.v1';
@@ -473,7 +528,7 @@ function recompute() {
   for (const h of S.history) { total += h.pts; by[h.player] = (by[h.player] || 0) + h.pts; }
   S.players.forEach((p) => { p.sparkles = by[p.id] || 0; });
   S.household.lifetime = total;
-  S.unlocked = DECOR.filter((d) => total >= d.c).map((d) => d.id);
+  S.unlocked = UNLOCKS.filter((d) => total >= d.c).map((d) => d.id);
   // Streak: days in a row (household) with at least one finished chore, counting back from the latest.
   const real = S.history.filter((h) => h.task !== 'carry' && h.ts > 1);
   if (!real.length) { S.streak = { count: 0, last: '' }; return; }
@@ -694,14 +749,21 @@ function typeInto(el, text) {
 }
 
 /* ---------- scoring ---------- */
-function checkUnlocks() {
-  DECOR.forEach((d) => {
-    if (S.household.lifetime >= d.c && !S.unlocked.includes(d.id)) {
-      S.unlocked.push(d.id);
-      (mem.newUnlocks = mem.newUnlocks || []).push(d);
-      toast(`Unlocked: ${d.e} ${d.n}`, 'win');
-    }
+// Toasts for new house unlocks and bonus decor between two household totals.
+function announceUnlocks(prevTotal, total, queue) {
+  UNLOCKS.filter((d) => d.c > prevTotal && d.c <= total).forEach((d) => {
+    if (queue) (mem.newUnlocks = mem.newUnlocks || []).push(d);
+    toast(`Unlocked: ${d.e} ${d.n} ${d.kind === 'furn' ? '(in your house now)' : '(in your decor box)'}`, 'win');
   });
+  const a = decorCopies(prevTotal), b = decorCopies(total);
+  DECOR_ITEMS.forEach((d) => { if (a[d.id] && b[d.id] > a[d.id]) toast(`Bonus! Another ${d.e} ${d.n} for your decor box`, 'win'); });
+}
+let lastTotal = S.household.lifetime;
+function checkUnlocks() {
+  const total = S.household.lifetime;
+  if (total > lastTotal) announceUnlocks(lastTotal, total, true);
+  lastTotal = total;
+  S.unlocked = UNLOCKS.filter((d) => total >= d.c).map((d) => d.id);
 }
 function awardTask(roomId, task, how) {
   if (task.done) return 0;
@@ -935,7 +997,7 @@ function renderHome() {
     <div class="stats">
       <div class="stat"><b>${S.streak.last === dayKey() || S.streak.last === dayKey(Date.now() - 864e5) ? S.streak.count : 0}</b><span>day streak</span></div>
       <div class="stat"><b>${doneWeek}</b><span>chores this week</span></div>
-      <div class="stat"><b>${S.unlocked.length}</b><span>decor unlocked</span></div>
+      <div class="stat"><b>${S.unlocked.length}</b><span>house unlocks</span></div>
     </div>
     <h2 class="section-title">Rooms</h2>
     <div class="rooms">
@@ -1023,7 +1085,7 @@ function renderRoom() {
 /* ---------- 3D house (House tab) ----------
    The drawing lives in house.js and is only loaded when the tab opens. Here: room types,
    the floor plan (synced on each room as room.plan, in meters) and the plan editor. */
-const HOUSE = { mod: null, ctrl: null, loading: null, sig: '', floor: 'all' };
+const HOUSE = { mod: null, ctrl: null, loading: null, sig: '', floor: 'all', decorating: false, placing: null, fresh: null };
 const FLOORS = [[-1, 'Basement'], [0, 'Main floor'], [1, 'Upstairs'], [2, 'Third floor']];
 const floorName = (f) => (FLOORS.find(([n]) => n === f) || [0, 'Main floor'])[1];
 const TYPE_RULES = [
@@ -1058,17 +1120,30 @@ function autoPlans(rooms, fresh = false) {
   return plans;
 }
 function usedFloors(plans) { return [...new Set(Object.values(plans).map((p) => p.f || 0))].sort((a, b) => a - b); }
+// Furniture models not earned yet, with what unlocks them (house.js draws these as dotted outlines).
+function lockedModels() {
+  const out = {};
+  UNLOCKS.forEach((u) => { if (!S.unlocked.includes(u.id)) u.models.forEach((m) => { if (!out[m]) out[m] = { id: u.id, e: u.e, n: u.n, c: u.c }; }); });
+  return out;
+}
 function houseModel() {
   const plans = autoPlans(S.rooms);
   const floors = usedFloors(plans);
   if (HOUSE.floor !== 'all' && !floors.includes(HOUSE.floor)) HOUSE.floor = 'all';
+  const placing = HOUSE.decorating && HOUSE.placing && unlockById(HOUSE.placing);
   return {
     floor: floors.length > 1 ? HOUSE.floor : 'all',
     persona: personaId(),
-    decor: S.unlocked.slice(),
+    locked: lockedModels(),
+    decorating: HOUSE.decorating,
+    placing: placing ? placing.models[0] : null,
     rooms: S.rooms.map((r) => {
       const sess = S.sessions[r.id];
-      return { id: r.id, name: r.name, emoji: r.emoji, type: roomType(r), plan: plans[r.id], shine: shineOf(r), open: sess ? sess.tasks.filter((t) => !t.done).length : 0, furniture: r.furniture || [] };
+      const decor = (r.decor || []).map((d, idx) => {
+        const u = unlockById(d.i);
+        return u && { m: u.models[0], x: d.x, z: d.z, r: d.r || 0, idx, fresh: !!(HOUSE.fresh && HOUSE.fresh.room === r.id && HOUSE.fresh.idx === idx) };
+      }).filter(Boolean);
+      return { id: r.id, name: r.name, emoji: r.emoji, type: roomType(r), plan: plans[r.id], shine: shineOf(r), open: sess ? sess.tasks.filter((t) => !t.done).length : 0, furniture: r.furniture || [], decor };
     })
   };
 }
@@ -1077,13 +1152,69 @@ function renderHouse() {
   if (HOUSE.floor !== 'all' && !floors.includes(HOUSE.floor)) HOUSE.floor = 'all';
   const chips = floors.length > 1 ? `<div class="floor-chips" role="tablist" aria-label="Floors">
       ${[['all', 'All floors'], ...floors.map((f) => [f, floorName(f)])].map(([f, n]) => `<button role="tab" aria-selected="${HOUSE.floor === f}" data-act="house-floor" data-f="${f}">${n}</button>`).join('')}</div>` : '';
-  app.innerHTML = topbar() + `
-    <div class="house-head"><h2 class="section-title" style="margin:0">Your house</h2>
-      <button class="btn small" data-act="plan-edit">Edit floor plan</button></div>
+  const box = decorBox(), inBox = box.reduce((a, d) => a + d.left, 0);
+  const head = HOUSE.decorating
+    ? `<div class="house-head"><h2 class="section-title" style="margin:0">Decorating</h2>
+        <button class="btn small primary" data-act="decor-done">Done</button></div>`
+    : `<div class="house-head"><h2 class="section-title" style="margin:0">Your house</h2>
+        <span class="house-btns"><button class="btn small" data-act="plan-edit">Floor plan</button>
+        <button class="btn small primary" data-act="decor-start">Decorate${inBox ? `<b class="pill">${inBox}</b>` : ''}</button></span></div>`;
+  let foot;
+  if (HOUSE.decorating) {
+    const pick = HOUSE.placing && box.find((d) => d.id === HOUSE.placing);
+    const next = DECOR_ITEMS.find((d) => S.household.lifetime < d.c);
+    const tip = pick ? `Tap a spot in any room to put the ${esc(pick.n.toLowerCase())} there.`
+      : box.length ? (inBox ? 'Pick something from your decor box, then tap a room. Tap a piece in the house to turn it, move it or put it away.' : 'Everything is out of the box! Tap a piece in the house to turn it, move it or put it away.')
+      : 'Your decor box is empty. Finish chores to earn plants, lamps and more.';
+    foot = `<p class="house-hint">${tip}</p>
+      <div class="decor-tray" role="listbox" aria-label="Decor box">${box.map((d) => `<button class="tray-item${d.id === HOUSE.placing ? ' on' : ''}" role="option" aria-selected="${d.id === HOUSE.placing}" data-act="decor-pick" data-id="${d.id}" ${d.left ? '' : 'disabled'}>
+        <span class="e">${d.e}</span><span class="n">${esc(d.n)}</span><b>×${d.left}</b></button>`).join('')}
+        ${next ? `<div class="tray-item next"><span class="e">${next.e}</span><span class="n">Next: ${esc(next.n)}</span><b>${next.c - S.household.lifetime} ✦ to go</b></div>` : ''}</div>`;
+  } else {
+    const nu = nextUnlock();
+    foot = `<p class="house-hint">Spin it with a finger, tap a room to open it. ${nu ? `Dotted outlines fill in as you earn sparkles. Next: ${nu.e} ${esc(nu.n)}, ${nu.c - S.household.lifetime}&nbsp;✦&nbsp;away.` : 'Dust bunnies mean a room needs love; sparkles mean it shines.'}</p>`;
+  }
+  app.innerHTML = topbar() + head + `
     ${chips}
-    <div class="house-wrap" id="houseWrap"><div class="house-msg">${fluffSVG()}<span>Building your house…</span></div></div>
-    <p class="house-hint">Drag to spin, pinch to zoom, tap a room to open it. Dust bunnies mean a room needs love; sparkles mean it shines.</p>`;
+    <div class="house-wrap${HOUSE.decorating ? ' decorating' : ''}" id="houseWrap"><div class="house-msg">${fluffSVG()}<span>Building your house…</span></div></div>
+    ${foot}`;
   mountHouse();
+}
+// Decorating: put a piece from the box into a room, or turn, move and put away placed pieces.
+function placeDecor(roomId, x, z) {
+  const room = roomById(roomId);
+  if (!room) return;
+  const box = decorBox();
+  if (!HOUSE.placing) { toast(box.some((d) => d.left) ? 'Pick something from your decor box first.' : 'Your decor box is empty. Finish chores to earn more!'); return; }
+  const d = box.find((b) => b.id === HOUSE.placing);
+  if (!d || !d.left) { HOUSE.placing = null; render(); return; }
+  room.decor = room.decor || [];
+  room.decor.push({ i: d.id, x, z, r: 0 });
+  HOUSE.fresh = { room: room.id, idx: room.decor.length - 1 };
+  if (d.left <= 1) HOUSE.placing = null;
+  chime();
+  save();
+  render();
+}
+function openDecorPiece(roomId, idx) {
+  const room = roomById(roomId), it = room && (room.decor || [])[idx], u = it && unlockById(it.i);
+  if (!u) return;
+  openSheet(`<h2>${u.e} ${esc(u.n)}</h2>
+    <p style="margin:0 0 14px;font-weight:700;color:var(--ink-soft)">In the ${esc(room.name.toLowerCase())}.</p>
+    <div class="decor-acts">
+      <button class="btn" data-act="decor-turn" data-room="${room.id}" data-i="${idx}">↻ Turn it</button>
+      <button class="btn" data-act="decor-move" data-room="${room.id}" data-i="${idx}">✋ Move it</button>
+      <button class="btn" data-act="decor-away" data-room="${room.id}" data-i="${idx}">📦 Put it away</button>
+    </div>`);
+}
+function decorAction(act, roomId, idx) {
+  const room = roomById(roomId), it = room && (room.decor || [])[idx];
+  if (!it) { closeSheet(); return; }
+  if (act === 'turn') { it.r = ((it.r || 0) + 1) % 4; save(); haptic(); if (ui.view === 'house') mountHouse(); return; }
+  room.decor.splice(idx, 1);
+  if (act === 'move') { HOUSE.placing = it.i; toast('Now tap where it should go.'); }
+  HOUSE.fresh = null;
+  save(); closeSheet(); render();
 }
 async function mountHouse() {
   const wrap = $('#houseWrap');
@@ -1094,7 +1225,10 @@ async function mountHouse() {
     if (!HOUSE.ctrl) {
       HOUSE.ctrl = HOUSE.mod.createHouse({
         onRoom: (id) => { if (!roomById(id)) return; ui.from = 'house'; ui.view = 'room'; ui.roomId = id; mem.selected = null; window.scrollTo(0, 0); render(); },
-        onFluff: () => { const l = line('hello'); toast(`${PERSONAS[personaId()].name}: ${l}`); unlockAudio(); if (S.settings.voice) say(l); haptic(); }
+        onFluff: () => { const l = line('hello'); toast(`${PERSONAS[personaId()].name}: ${l}`); unlockAudio(); if (S.settings.voice) say(l); haptic(); },
+        onGhost: (g) => { const need = g.c - S.household.lifetime; toast(need > 0 ? `${g.e} ${g.n} unlock at ${g.c} household sparkles. ${need} to go!` : `${g.e} ${g.n} are on the way!`); haptic(); },
+        onPlace: (roomId, x, z) => placeDecor(roomId, x, z),
+        onDecorTap: (roomId, idx) => openDecorPiece(roomId, idx)
       });
       HOUSE.sig = '';
     }
@@ -1105,6 +1239,7 @@ async function mountHouse() {
     const model = houseModel();
     const sig = JSON.stringify(model);
     if (sig !== HOUSE.sig) { HOUSE.ctrl.update(model); HOUSE.sig = sig; }
+    HOUSE.fresh = null; // the pop animation plays once
     HOUSE.ctrl.start();
   } catch (e) {
     console.warn('house', e);
@@ -1194,15 +1329,17 @@ function autoPlansFresh(rooms, floors) {
   return plans;
 }
 function renderRewards() {
-  const next = DECOR.find((d) => !S.unlocked.includes(d.id));
+  const next = nextUnlock();
+  const copies = decorCopies(), inBox = decorBoxCount();
   const board = [...S.players].sort((a, b) => weekPoints(b.id) - weekPoints(a.id));
   const recent = S.history.slice(0, 12);
   app.innerHTML = topbar() + `
-    <h2 class="section-title">Decor shelf</h2>
-    <p class="next">${next ? `${next.c - S.household.lifetime} more household sparkles until the ${next.n.toLowerCase()}.` : 'You\'ve unlocked every piece. Your 3D house is going to be packed!'}</p>
-    <div class="shelf">${DECOR.map((d) => {
+    <h2 class="section-title">House unlocks</h2>
+    <p class="next">${next ? `Every chore anyone finishes counts. ${next.c - S.household.lifetime} more household sparkles until ${next.kind === 'furn' ? '' : 'the '}${esc(next.n.toLowerCase())}.` : 'You\'ve unlocked everything! Every 200 sparkles still adds a bonus piece to the decor box.'}</p>
+    <button class="btn primary" data-act="decor-start" style="width:100%;margin:0 0 12px">🏠 Decorate the house${inBox ? ` · ${inBox} in the box` : ''}</button>
+    <div class="shelf">${UNLOCKS.map((d) => {
       const got = S.unlocked.includes(d.id);
-      return `<div class="decor ${got ? '' : 'locked'}"><span class="e">${d.e}</span><span class="n">${got ? d.n : 'Locked'}</span>${got ? '' : `<span class="c">${d.c} ✦</span>`}</div>`;
+      return `<div class="decor ${got ? '' : 'locked'}"><span class="e">${d.e}</span><span class="n">${esc(d.n)}</span><span class="k">${d.kind === 'furn' ? 'Furniture' : 'Decor'}${got && copies[d.id] > 1 ? ` ×${copies[d.id]}` : ''}</span>${got ? '' : `<span class="c">${d.c} ✦</span>`}</div>`;
     }).join('')}</div>
     <h2 class="section-title mt">This week</h2>
     <div class="panel"><ol class="board">${board.map((p) => `<li>${avatar(p, 30)}${esc(p.name)}<span class="sc">${weekPoints(p.id)} ✦</span></li>`).join('')}</ol></div>
@@ -1472,7 +1609,7 @@ function pickFields(o, fields) { const r = {}; for (const f of fields) if (o[f] 
 function syncEntities() {
   const m = new Map();
   S.players.forEach((p) => m.set('player:' + p.id, JSON.stringify(pickFields(p, ['name', 'color', 'persona', 'created']))));
-  S.rooms.forEach((r) => m.set('room:' + r.id, JSON.stringify(pickFields(r, ['name', 'emoji', 'shine', 'shineAt', 'photoArea', 'photoAreas', 'furniture', 'plan', 'created']))));
+  S.rooms.forEach((r) => m.set('room:' + r.id, JSON.stringify(pickFields(r, ['name', 'emoji', 'shine', 'shineAt', 'photoArea', 'photoAreas', 'furniture', 'plan', 'decor', 'created']))));
   Object.entries(S.sessions).forEach(([rid, ss]) => {
     if (!roomById(rid)) return;
     m.set('session:' + rid, JSON.stringify(pickFields(ss, ['summary', 'createdAt', 'demo', 'sweep'])));
@@ -1491,7 +1628,7 @@ function syncDiff(cur, base) {
 function resetObj(o, keep = []) { if (!o) return {}; for (const k of Object.keys(o)) if (!keep.includes(k)) delete o[k]; return o; }
 // Rebuild the household from a full set of items, reusing existing objects so open screens stay connected.
 function applyEntities(items) {
-  const before = new Set(S.unlocked);
+  const prevTotal = S.household.lifetime;
   const by = { player: [], room: [], session: [], task: [], event: [] };
   items.forEach((json, key) => { const [k, id] = splitKey(key); if (by[k]) by[k].push({ id, d: JSON.parse(json) }); });
   const oldP = new Map(S.players.map((p) => [p.id, p]));
@@ -1524,7 +1661,8 @@ function applyEntities(items) {
   S.history = events.filter((e) => { const t = String(e.task || ''); return !winner.has(t) || winner.get(t) === e; }).reverse();
   if (!S.players.some((p) => p.id === S.current)) S.current = S.players[0] ? S.players[0].id : null;
   recompute();
-  DECOR.filter((d) => S.unlocked.includes(d.id) && !before.has(d.id)).forEach((d) => toast(`The house unlocked: ${d.e} ${d.n}`, 'win'));
+  if (S.household.lifetime > prevTotal) announceUnlocks(prevTotal, S.household.lifetime, false);
+  lastTotal = S.household.lifetime;
   storeLocal();
 }
 function baseFrom(items, base = {}) {
@@ -2152,7 +2290,7 @@ const LINES = {
     half: ['Halfway there! The second half always goes faster.', 'That\'s half the list, {name}! Keep it up.'],
     last: ['Just one chore left: {task}. Finish strong!', 'One to go! {Task}, and this room is done.'],
     near: ['Only {need} sparkles until you unlock the {item}!', 'You\'re {need} sparkles away from the {item}. Keep going!'],
-    unlock: ['You just unlocked the {item}! It\'s waiting on your decor shelf.', 'New decor! The {item} is yours, {name}.'],
+    unlock: ['You just unlocked the {item}! Go peek at the house.', 'Something new for the house! The {item} is yours, {name}.'],
     go: ['{dur} on the clock! Go, go, go!'],
     target: ['Challenge time, {name}! I\'m putting {dur} on the clock. Can you {task} before it runs out? Beat it and the sparkles double!'],
     blitz: ['Challenge time! {dur} on the clock. See how many chores you can knock out. {bonus} bonus sparkles each!'],
@@ -2212,7 +2350,7 @@ const LINES = {
     half: ['Halfway. That\'s about as far as I usually get. You keep going.', 'Half done, {name}. The fun half. Or the other half. Whatever.'],
     last: ['One left: {task}. Then we can all nap.', 'Last one. {Task}. Then I\'m going back to sleep. You too, if you want.'],
     near: ['{need} sparkles until the {item}. I\'d want it. If I wanted things.', 'Only {need} more for the {item}. That\'s like, a couple chores. Easy.'],
-    unlock: ['You unlocked the {item}. I\'m going to sleep on it. Literally.', 'New decor: the {item}. Okay, that\'s actually cool, {name}.'],
+    unlock: ['You unlocked the {item}. I\'m going to sleep on it. Literally.', 'New for the house: the {item}. Okay, that\'s actually cool, {name}.'],
     go: ['{dur} on the clock. Go. I\'ll watch.'],
     target: ['Ugh, fine, challenge time, {name}. {dur} on the clock. Can you {task} before it runs out? Beat it and your sparkles double. Wow.'],
     blitz: ['Surprise challenge. {dur} on the clock. Do as many chores as you can. {bonus} bonus sparkles each. I\'ll be here. Resting.'],
@@ -2324,7 +2462,7 @@ function pepAfterAward() {
     const left = sess.tasks.filter((t) => !t.done).length;
     if (left === 1 && !C.ms.last) { C.ms.last = true; return pepSay('last'); }
     if (left <= sess.tasks.length / 2 && !C.ms.half) { C.ms.half = true; return pepSay('half'); }
-    const next = DECOR.find((d) => !S.unlocked.includes(d.id));
+    const next = nextUnlock();
     const need = next ? next.c - S.household.lifetime : 99;
     if (next && need > 0 && need <= 20 && C.ms.near !== next.id) { C.ms.near = next.id; pepSay('near', { need, item: next.n.toLowerCase() }); }
   }, 4500);
@@ -2826,7 +2964,7 @@ function swipeClear(els) { els.forEach((el) => { el.style.transition = ''; el.st
 document.addEventListener('touchstart', (e) => {
   SW.on = false;
   if (e.touches.length !== 1) return;
-  if (e.target.closest('input, select, textarea, video, canvas, .coach-tasks, .thumbs, .plan-ed, .house-wrap')) return; // sliders and fields keep their own drags
+  if (e.target.closest('input, select, textarea, video, canvas, .coach-tasks, .thumbs, .plan-ed, .house-wrap, .decor-tray')) return; // sliders and fields keep their own drags
   const scope = swipeScope();
   if (!scope) return;
   const t = e.touches[0];
@@ -2877,9 +3015,13 @@ document.addEventListener('click', (e) => {
   if (!a) return;
   const act = a.dataset.act, id = a.dataset.id;
   switch (act) {
-    case 'tab': ui.from = null; ui.view = a.dataset.view; mem.selected = null; window.scrollTo(0, 0); render(); break;
+    case 'tab': ui.from = null; if (a.dataset.view !== 'house') { HOUSE.decorating = false; HOUSE.placing = null; } ui.view = a.dataset.view; mem.selected = null; window.scrollTo(0, 0); render(); break;
     case 'home': ui.view = ui.from === 'house' ? 'house' : 'home'; ui.from = null; mem.selected = null; window.scrollTo(0, 0); render(); break;
     case 'plan-edit': openPlanEditor(); break;
+    case 'decor-start': HOUSE.decorating = true; HOUSE.placing = null; ui.view = 'house'; ui.from = null; window.scrollTo(0, 0); render(); break;
+    case 'decor-done': HOUSE.decorating = false; HOUSE.placing = null; render(); break;
+    case 'decor-pick': HOUSE.placing = HOUSE.placing === id ? null : id; haptic(); render(); break;
+    case 'decor-turn': case 'decor-move': case 'decor-away': decorAction(act.slice(6), a.dataset.room, Number(a.dataset.i)); break;
     case 'house-floor': HOUSE.floor = a.dataset.f === 'all' ? 'all' : Number(a.dataset.f); render(); break;
     case 'room': ui.view = 'room'; ui.roomId = id; mem.selected = null; window.scrollTo(0, 0); render(); break;
     case 'photo': askPhoto(a.dataset.src, a.dataset.mode === 'after' ? 'after' : 'before'); break;

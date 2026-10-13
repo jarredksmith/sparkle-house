@@ -100,7 +100,11 @@ const MODELS = {
   chime: () => group(cyl(0.015, 0.015, 1.6, 0x8a5a3a), ...[-0.08, 0, 0.08].map((x, i) => cyl(0.02, 0.02, 0.25 - i * 0.04, ACCENT[i], x, 1.2))),
   fort: () => group(mesh(geo('fort', () => new THREE.ConeGeometry(0.8, 1.0, 4)), 0xc9b7e6, 0, 0.5, 0), box(0.4, 0.5, 0.05, 0xfff4e0, 0, 0, 0.55)),
   cabinet: (c = 0xe8c9a0) => group(box(1.0, 0.9, 0.45, c), box(0.02, 0.6, 0.02, 0x8a5a3a, -0.05, 0.15, 0.23), box(0.02, 0.6, 0.02, 0x8a5a3a, 0.05, 0.15, 0.23)),
-  shelf: (c = 0xbac0c8) => group(box(1.4, 1.5, 0.45, c), box(0.3, 0.25, 0.3, 0xffb36b, -0.4, 0.3, 0.02), box(0.35, 0.25, 0.3, 0x8ad3f0, 0.3, 0.8, 0.02))
+  shelf: (c = 0xbac0c8) => group(box(1.4, 1.5, 0.45, c), box(0.3, 0.25, 0.3, 0xffb36b, -0.4, 0.3, 0.02), box(0.35, 0.25, 0.3, 0x8ad3f0, 0.3, 0.8, 0.02)),
+  beanbag: (c = 0xffb36b) => { const b = ball(0.42, c, 0, 0.27, 0, 18); b.scale.y = 0.65; return group(b, ball(0.26, c, 0, 0.42, -0.14, 14)); },
+  teddy: () => group(ball(0.2, 0xc98f5e, 0, 0.2, 0), ball(0.15, 0xc98f5e, 0, 0.48, 0), ball(0.06, 0xc98f5e, -0.11, 0.6, 0, 8), ball(0.06, 0xc98f5e, 0.11, 0.6, 0, 8),
+    ball(0.06, 0xe8c9a0, 0, 0.45, 0.13, 8), ball(0.02, 0x2d3b36, -0.05, 0.52, 0.13, 6), ball(0.02, 0x2d3b36, 0.05, 0.52, 0.13, 6), box(0.16, 0.05, 0.05, 0xff8fa3, 0, 0.33, 0.12)),
+  cactus: () => { const arm = cyl(0.05, 0.05, 0.22, 0x5aae6a, 0.13, 0.42, 0); return group(cyl(0.16, 0.12, 0.24, 0xd98c5f), cyl(0.09, 0.09, 0.55, 0x5aae6a, 0, 0.22), arm, ball(0.05, 0x5aae6a, 0.13, 0.64, 0, 8), box(0.1, 0.05, 0.05, 0x5aae6a, 0.07, 0.42, 0), ball(0.05, 0xff8fa3, 0, 0.8, 0, 8)); }
 };
 function legs(w, d, h, c) { return [[-1, -1], [1, -1], [-1, 1], [1, 1]].map(([sx, sz]) => box(0.06, h, 0.06, c, (sx * w) / 2, 0, (sz * d) / 2)); }
 function wheel(x, z) { const w = cyl(0.3, 0.3, 0.2, 0x2d3b36, 0, 0, 0); w.rotation.z = Math.PI / 2; w.position.set(x, 0.3, z); return w; }
@@ -134,8 +138,28 @@ const DEFAULTS = {
   patio: [['table', 'center'], ['chair', 'left'], ['chair', 'right'], ['plant', 'back-left'], ['plant', 'back-right']],
   other: [['rug', 'center'], ['plant', 'back-left']]
 };
-const DECOR_MODEL = { fern: 'plant', basket: 'basket', lamp: 'lamp', clock: 'clock', books: 'books', tank: 'tank', chime: 'chime', piano: 'piano', globe: 'globe', tree: 'tree', rug: 'rainbowrug', fort: 'fort' };
-const DECOR_HOME = { fern: 'living', basket: 'laundry', lamp: 'living', clock: 'living', books: 'office', tank: 'living', chime: 'patio', piano: 'living', globe: 'office', tree: 'living', rug: 'kids', fort: 'kids' };
+
+// Furniture the household hasn't earned yet shows as a see-through outline with dashed edges.
+const GHOST_FILL = new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.22, depthWrite: false });
+const GHOST_LINE = new THREE.LineDashedMaterial({ color: 0x6f8f80, dashSize: 0.07, gapSize: 0.05, transparent: true, opacity: 0.85 });
+const EDGES = new Map();
+function ghostify(obj, info) {
+  const lines = [];
+  obj.traverse((o) => {
+    o.userData.ghost = info;
+    if (!o.isMesh) return;
+    o.material = GHOST_FILL; o.castShadow = false; o.receiveShadow = false;
+    if (!EDGES.has(o.geometry)) EDGES.set(o.geometry, new THREE.EdgesGeometry(o.geometry, 30));
+    const l = new THREE.LineSegments(EDGES.get(o.geometry), GHOST_LINE);
+    l.computeLineDistances();
+    l.raycast = () => {};
+    l.userData.ghost = info;
+    lines.push([o, l]);
+  });
+  lines.forEach(([o, l]) => o.add(l));
+  return obj;
+}
+export const MODEL_NAMES = Object.keys(MODELS);
 
 /* ---------- Fluff ---------- */
 function makeFluff(persona) {
@@ -155,7 +179,7 @@ function makeFluff(persona) {
 }
 
 /* ---------- the house ---------- */
-export function createHouse({ onRoom, onFluff } = {}) {
+export function createHouse({ onRoom, onFluff, onGhost, onPlace, onDecorTap } = {}) {
   const el = document.createElement('div');
   el.className = 'house-stage';
   const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: false });
@@ -181,7 +205,7 @@ export function createHouse({ onRoom, onFluff } = {}) {
 
   const camera = new THREE.OrthographicCamera(-10, 10, 10, -10, 0.1, 200);
   const view = { yaw: Math.PI / 4, pitch: 0.92, zoom: 1, radius: 7 };
-  let fluff = null, fluffState = null, anim = [], roomCenters = [], floors = [];
+  let fluff = null, fluffState = null, anim = [], roomCenters = [], floors = [], ghosts = [], placed = [], mode = {}, fluffKey = '';
 
   function placeCamera() {
     const w = el.clientWidth || 300, h = el.clientHeight || 300, a = w / h;
@@ -198,9 +222,14 @@ export function createHouse({ onRoom, onFluff } = {}) {
   }
 
   function build(model) {
+    const prevFluff = fluff && fluffState ? { pos: fluff.position.clone(), state: fluffState, rot: fluff.rotation.y } : null;
     world.clear();
-    anim = []; roomCenters = []; floors = [];
+    anim = []; roomCenters = []; floors = []; ghosts = []; placed = [];
     labels.innerHTML = '';
+    mode = { decorating: !!model.decorating, placing: model.placing || null };
+    labels.classList.toggle('off', mode.decorating);
+    // model.locked: { modelName: info } for furniture not earned yet (drawn as ghosts). Missing = earned.
+    const locked = model.locked || {};
     // Floors: "all" stacks every floor like an open dollhouse; a number shows just that floor.
     const sel = model.floor ?? 'all';
     const levelOf = (r) => r.plan.f || 0;
@@ -259,12 +288,6 @@ export function createHouse({ onRoom, onFluff } = {}) {
       world.add(ball(0.08, ACCENT[i % ACCENT.length], x, 0.06, z, 8));
     }
     for (let i = 0; i < (underground ? 0 : 4); i++) world.add(cyl(0.35, 0.35, 0.05, 0xe8e2d4, -0.3 + (i % 2) * 0.5, -0.02, (maxZ - minZ) / 2 + 0.7 + i * 0.8));
-    // Each unlocked decor piece goes to the room it suits (or the living room, or the first room).
-    const decorFor = {};
-    (model.decor || []).forEach((id) => {
-      const home = rooms.find((r) => r.type === DECOR_HOME[id]) || rooms.find((r) => r.type === 'living') || rooms[0];
-      (decorFor[home.id] = decorFor[home.id] || []).push(id);
-    });
 
     rooms.forEach((r) => {
       const p = r.plan, x0 = p.x - cx, z0 = p.z - cz, w = p.w, d = p.d;
@@ -319,18 +342,34 @@ export function createHouse({ onRoom, onFluff } = {}) {
         const fitsCar = name !== 'car' || (w >= 2.6 && d >= 4);
         if (!fitsCar) return;
         obj.position.set(fx, 0, fz); obj.rotation.y = rot;
+        // Not earned yet: a dotted outline that fills in once the household unlocks it.
+        if (locked[name]) { ghostify(obj, locked[name]); if (name !== 'rug') ghosts.push(obj); }
         g.add(obj);
       });
-      // Decor you've unlocked lives in the room it belongs in (or the first room).
-      (decorFor[r.id] || []).forEach((id, i) => {
-        const make = MODELS[DECOR_MODEL[id]];
+      // Decor the family placed from the decor box (room-relative meters, quarter turns).
+      (r.decor || []).forEach((it) => {
+        const make = MODELS[it.m];
         if (!make) return;
         const obj = make();
-        const corners = [[0.55, d - 0.55], [w - 0.55, d - 0.55], [w - 0.55, 0.55], [0.55, 0.55]];
-        const [fx, fz] = id === 'rug' || id === 'fort' ? [w / 2 + (i % 2 ? 0.4 : -0.4), d / 2 + 0.5] : corners[i % 4];
-        obj.position.set(fx, 0.002 * i, fz);
+        obj.position.set(Math.min(w - 0.25, Math.max(0.25, it.x)), 0.003 * (it.idx % 5), Math.min(d - 0.25, Math.max(0.25, it.z)));
+        obj.rotation.y = ((it.r || 0) % 4) * (Math.PI / 2);
+        obj.traverse((o) => { o.userData.decor = { roomId: r.id, idx: it.idx }; });
+        placed.push(obj);
         g.add(obj);
+        if (it.fresh) {
+          // A little pop when something new lands.
+          const t0 = performance.now() / 1000;
+          anim.push(() => { const k = Math.min(1, (performance.now() / 1000 - t0) / 0.45); obj.scale.setScalar(k < 1 ? 0.2 + Math.sin(k * Math.PI * 0.75) * 1.1 : 1); });
+        }
       });
+      // While placing something, rooms you can drop it in glow a little.
+      if (mode.placing) {
+        const glow = mesh(geo(`glow${w}:${d}`, () => new THREE.PlaneGeometry(w - 0.2, d - 0.2)), 0xffe066, w / 2, 0.012, d / 2, { transparent: true, opacity: 0.28, depthWrite: false });
+        glow.rotation.x = -Math.PI / 2; glow.castShadow = false; glow.receiveShadow = false;
+        glow.raycast = () => {};
+        g.add(glow);
+        anim.push((t) => { glow.material.opacity = 0.18 + Math.abs(Math.sin(t * 2.5)) * 0.18; });
+      }
 
       // Mess: clutter for open chores, dust bunnies when the room needs love, sparkles when it shines.
       const rr = rng(r.id);
@@ -377,10 +416,17 @@ export function createHouse({ onRoom, onFluff } = {}) {
     fluff = makeFluff(model.persona);
     fluff.scale.setScalar(1.5);
     world.add(fluff);
-    const busiest = [...roomCenters].sort((a, b) => b.open - a.open)[0];
-    const start = busiest ? new THREE.Vector3(busiest.center.x + Math.min(0.9, busiest.w / 4), busiest.y, busiest.center.z + Math.min(0.9, busiest.d / 4)) : new THREE.Vector3();
-    fluff.position.copy(start);
-    fluffState = { from: start.clone(), to: start.clone(), t0: 0, dur: 1, next: 2 };
+    const key = sel + '|' + rooms.map((r) => r.id + ':' + JSON.stringify(r.plan)).join(',');
+    if (prevFluff && key === fluffKey) {
+      // Same house, just redecorated: Fluff stays where it was.
+      fluff.position.copy(prevFluff.pos); fluff.rotation.y = prevFluff.rot; fluffState = prevFluff.state;
+    } else {
+      const busiest = [...roomCenters].sort((a, b) => b.open - a.open)[0];
+      const start = busiest ? new THREE.Vector3(busiest.center.x + Math.min(0.9, busiest.w / 4), busiest.y, busiest.center.z + Math.min(0.9, busiest.d / 4)) : new THREE.Vector3();
+      fluff.position.copy(start);
+      fluffState = { from: start.clone(), to: start.clone(), t0: 0, dur: 1, next: clock.getElapsedTime() + 2 };
+    }
+    fluffKey = key;
 
     sun.position.set(span * 0.6, span * 1.2 + 6 + maxY, span * 0.8);
     sun.target.position.set(0, view.targetY, 0);
@@ -454,9 +500,21 @@ export function createHouse({ onRoom, onFluff } = {}) {
   function tap(e) {
     const rect = canvas.getBoundingClientRect();
     ray.setFromCamera(new THREE.Vector2(((e.clientX - rect.left) / rect.width) * 2 - 1, -((e.clientY - rect.top) / rect.height) * 2 + 1), camera);
+    const floorHit = ray.intersectObjects(floors, false)[0];
+    if (mode.decorating) {
+      // Decorating: tap a placed piece to turn or put it away; with a piece picked, tap a floor to place it.
+      const d = !mode.placing && ray.intersectObjects(placed, true)[0];
+      if (d) { onDecorTap && onDecorTap(d.object.userData.decor.roomId, d.object.userData.decor.idx); return; }
+      if (floorHit && onPlace) {
+        const local = floorHit.object.parent.worldToLocal(floorHit.point.clone());
+        onPlace(floorHit.object.userData.roomId, Math.round(local.x * 100) / 100, Math.round(local.z * 100) / 100);
+      }
+      return;
+    }
     if (fluff && ray.intersectObject(fluff, true).length) { onFluff && onFluff(); fluffState.next = 0; return; }
-    const hit = ray.intersectObjects(floors, false)[0];
-    if (hit && onRoom) onRoom(hit.object.userData.roomId);
+    const gh = ray.intersectObjects(ghosts, true)[0];
+    if (gh && onGhost && (!floorHit || gh.distance <= floorHit.distance + 0.01)) { onGhost(gh.object.userData.ghost, floorHit && floorHit.object.userData.roomId); return; }
+    if (floorHit && onRoom) onRoom(floorHit.object.userData.roomId);
   }
 
   /* ---------- loop ---------- */
@@ -492,6 +550,8 @@ export function createHouse({ onRoom, onFluff } = {}) {
     el,
     update(model) { build(model); resize(); },
     start() { resize(); if (!raf) raf = requestAnimationFrame(frame); },
+    // Where a room's floor center is on screen (used by tests and hints).
+    screenOf(id) { const r = roomCenters.find((c) => c.id === id); if (!r) return null; v.set(r.x0 + r.w / 2, r.y, r.z0 + r.d / 2).project(camera); const b = canvas.getBoundingClientRect(); return { x: b.left + ((v.x + 1) / 2) * b.width, y: b.top + ((1 - v.y) / 2) * b.height }; },
     resetView() { Object.assign(view, { yaw: Math.PI / 4, pitch: 0.92, zoom: 1 }); placeCamera(); },
     dispose() { cancelAnimationFrame(raf); ro.disconnect(); renderer.dispose(); el.remove(); }
   };
