@@ -503,7 +503,7 @@ const fresh = () => ({
     { id: 'bathroom', name: 'Bathroom', emoji: '🛁', shine: 50, shineAt: Date.now(), created: 4 }
   ],
   sessions: {},
-  settings: { workerUrl: '', token: '', sound: true, voice: false, voiceId: '', minGap: 20, camera: 'environment', pep: 'light', wide: false },
+  settings: { workerUrl: '', token: '', sound: true, voice: true, voiceId: '', minGap: 20, camera: 'environment', pep: 'light', wide: false },
   household: { lifetime: 0 },
   unlocked: [],
   streak: { count: 0, last: '' },
@@ -651,10 +651,26 @@ const FA = NATIVE && window.Capacitor && typeof window.Capacitor.nativePromise =
   ? new Proxy({}, { get: (_, method) => (args) => window.Capacitor.nativePromise('FluffAudio', method, args || {}) })
   : null;
 let faBroken = false;
+// Returns what the phone reported (true for older builds that report nothing), or false if it didn't play.
 async function nativeAudio(method, args) {
   if (!FA || faBroken) return false;
-  try { await FA[method](args || {}); return true; }
-  catch (e) { if (/not implemented|unimplemented|not available/i.test(String(e && (e.code || e.message)))) faBroken = true; return false; }
+  try {
+    const r = (await FA[method](args || {})) || {};
+    if (method !== 'stop') mem.audio = { how: 'native ' + method, ...r, at: Date.now() };
+    return r.playing === false ? false : r || true;
+  } catch (e) {
+    if (method !== 'stop') mem.audio = { how: 'native ' + method, playing: false, error: String(e && (e.message || e.code)), at: Date.now() };
+    if (/not implemented|unimplemented|not available/i.test(String(e && (e.code || e.message)))) faBroken = true;
+    return false;
+  }
+}
+// A one-line summary of the last sound, for the sound test in Settings.
+function audioReport() {
+  const a = mem.audio;
+  if (!a) return '';
+  if (a.playing === false) return `Didn't play (${a.how}${a.error ? ': ' + a.error : ''}).`;
+  const vol = typeof a.volume === 'number' ? ` · phone volume ${Math.round(a.volume * 100)}%` : '';
+  return `Playing through ${a.output || 'the phone'}${a.category ? ` (${a.category})` : ''}${vol}${a.how && a.how.startsWith('web') ? ' · web audio, follows the silent switch' : ''}.`;
 }
 function b64FromBuffer(buf) {
   const bytes = new Uint8Array(buf); let bin = '';
@@ -677,6 +693,7 @@ function chime() {
 }
 function webChime() {
   if (!actx) return;
+  mem.audio = { how: 'web chime', at: Date.now() };
   const t = actx.currentTime;
   [[784, 0], [1175, 0.09], [1568, 0.18]].forEach(([f, dt]) => {
     const o = actx.createOscillator(), g = actx.createGain();
@@ -723,6 +740,7 @@ function sayOnPhone(text, voiceId) {
 }
 function webSayOnPhone(text, voiceId) {
   if (!hasSpeech) return;
+  mem.audio = { how: 'web phone voice', at: Date.now() };
   try {
     speechSynthesis.cancel();
     const u = new SpeechSynthesisUtterance(text);
@@ -772,6 +790,7 @@ async function playBuffer(buf, my) {
   }
   if (!actx) unlockAudio();
   if (!actx) throw new Error('no audio');
+  mem.audio = { how: 'web AI voice', at: Date.now() };
   const audio = await actx.decodeAudioData(buf.slice(0));
   if (my !== AI.token) return;
   if (AI.source) { try { AI.source.stop(); } catch (e) { /* already stopped */ } }
@@ -787,6 +806,7 @@ async function say(text, voiceId = currentVoiceId()) {
   if (voiceId && voiceId.startsWith('el:') && api.live) {
     try { await playBuffer(await aiAudio(voiceId.slice(3), text), my); return; }
     catch (e) {
+      mem.voiceError = e.message || String(e);
       if (!AI.failedNote) { AI.failedNote = true; toast((e.message || 'Fluff\'s AI voice isn\'t available') + ' Using the phone\'s voice instead.'); }
       if (my !== AI.token) return;
       voiceId = '';
@@ -1540,6 +1560,7 @@ function openSettings() {
     <label class="toggle">Fluff talks out loud<input id="sVoice" type="checkbox" ${st.voice ? 'checked' : ''}></label>
     <label class="field">Fluff's voice<select id="sVoiceId">${voiceOptions()}</select><small id="voiceHint">${voiceHint()}</small></label>
     <button class="btn small" data-act="test-voice">Play sample</button>
+    <small class="set-note" id="voiceDiag" style="margin-top:8px"></small>
     <audio id="previewAudio" preload="none"></audio>`;
   const coach = `<label class="field">Fluff's pep talk<select id="sPep">
       <option value="off" ${st.pep === 'off' ? 'selected' : ''}>Off, results only</option>
@@ -2878,6 +2899,7 @@ async function startCoach(roomId) {
   renderCoachTasks();
   showSetup('place');
   coachLine(line('setup'));
+  if (!S.settings.voice && !mem.voiceOffNote) { mem.voiceOffNote = true; setTimeout(() => toast('Fluff\'s voice is off. Turn on "Fluff talks out loud" in Settings > Fluff to hear coaching.'), 1500); }
   S.coachTipSeen = true; save();
   try {
     await openCamera(S.settings.camera);
@@ -3224,7 +3246,7 @@ async function runCheck(manual, opts = {}) {
     } else if (manual) {
       coachLine(res.feedback || line('noChange'));
     } else if (res.feedback) {
-      coachLine(res.feedback, false);
+      coachLine(res.feedback);
     }
     renderCoachTasks();
     if (sess.tasks.every((t) => t.done)) coachDone();
@@ -3535,8 +3557,14 @@ document.addEventListener('click', (e) => {
       unlockAudio();
       const id = $('#sVoiceId') ? $('#sVoiceId').value : '';
       const ai = id.startsWith('el:') && AI.voices.find((v) => 'el:' + v.id === id);
-      if (ai && ai.preview) { const a = $('#previewAudio'); a.src = ai.preview; a.play().catch(() => say('Hi! I\'m Fluff. Let\'s make this room sparkle!', id)); }
-      else say('Hi! I\'m Fluff. Let\'s make this room sparkle!', id);
+      // In the iPhone app, test the same path Coach Mode uses (it's the one that matters on silent).
+      if (ai && ai.preview && !FA) { const a = $('#previewAudio'); a.src = ai.preview; a.play().catch(() => say('Hi! I\'m Fluff. Let\'s make this room sparkle!', id)); }
+      else {
+        mem.audio = null; mem.voiceError = '';
+        say('Hi! I\'m Fluff. Let\'s make this room sparkle!', id);
+        const out = $('#voiceDiag');
+        if (out) { out.textContent = 'Testing…'; setTimeout(() => { if (out.isConnected) out.textContent = (mem.voiceError ? `AI voice problem: ${mem.voiceError} ` : '') + (audioReport() || 'No sound was started.'); }, 3500); }
+      }
       break;
     }
     case 'add-room': openAddRoom(); break;

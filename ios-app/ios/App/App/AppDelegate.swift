@@ -99,9 +99,35 @@ public class FluffAudioPlugin: CAPPlugin, CAPBridgedPlugin {
     private var chimePlayer: AVAudioPlayer?
     private let synth = AVSpeechSynthesizer()
 
+    /// Gets the audio session ready to play out loud. While the camera is running (Coach Mode), the web view
+    /// may have the session in record mode; switching away from that can be refused, so in that case stay in
+    /// record mode but send sound to the loudspeaker. Both ignore the silent switch.
     private func prepare() {
-        useLoudAudio()
+        let session = AVAudioSession.sharedInstance()
+        do {
+            if session.category == .playAndRecord {
+                try session.setCategory(.playAndRecord, mode: .default, options: [.defaultToSpeaker, .mixWithOthers, .allowBluetoothA2DP])
+            } else {
+                try session.setCategory(.playback, mode: .default, options: [.mixWithOthers])
+            }
+            try session.setActive(true)
+        } catch {
+            lastError = error.localizedDescription
+        }
         keepLoudspeaker()
+    }
+    private var lastError = ""
+
+    /// What the audio session is doing, for the app's sound test.
+    private func status(_ playing: Bool) -> [String: Any] {
+        let session = AVAudioSession.sharedInstance()
+        return [
+            "playing": playing,
+            "category": session.category.rawValue.replacingOccurrences(of: "AVAudioSessionCategory", with: ""),
+            "output": session.currentRoute.outputs.map { $0.portName }.joined(separator: ", "),
+            "volume": session.outputVolume,
+            "error": lastError
+        ]
     }
 
     private func stopVoice() {
@@ -117,14 +143,16 @@ public class FluffAudioPlugin: CAPPlugin, CAPBridgedPlugin {
             return
         }
         DispatchQueue.main.async {
+            self.lastError = ""
             self.prepare()
             self.stopVoice()
             do {
                 let player = try AVAudioPlayer(data: data)
+                player.volume = 1.0
                 player.prepareToPlay()
-                player.play()
+                let ok = player.play()
                 self.voicePlayer = player
-                call.resolve()
+                call.resolve(self.status(ok))
             } catch {
                 call.reject("Couldn't play the audio: \(error.localizedDescription)")
             }
@@ -150,7 +178,7 @@ public class FluffAudioPlugin: CAPPlugin, CAPBridgedPlugin {
             utterance.rate = min(AVSpeechUtteranceMaximumSpeechRate, AVSpeechUtteranceDefaultSpeechRate * rate)
             utterance.pitchMultiplier = pitch
             self.synth.speak(utterance)
-            call.resolve()
+            call.resolve(self.status(true))
         }
     }
 
@@ -161,13 +189,14 @@ public class FluffAudioPlugin: CAPPlugin, CAPBridgedPlugin {
                 call.reject("Chime sound not found.")
                 return
             }
+            self.lastError = ""
             self.prepare()
             do {
                 let player = try AVAudioPlayer(contentsOf: url)
                 player.volume = 0.8
-                player.play()
+                let ok = player.play()
                 self.chimePlayer = player
-                call.resolve()
+                call.resolve(self.status(ok))
             } catch {
                 call.reject("Couldn't play the chime: \(error.localizedDescription)")
             }
