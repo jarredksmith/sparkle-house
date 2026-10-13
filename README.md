@@ -55,9 +55,17 @@ Want a voice that's truly Fluff's? Use ElevenLabs' voice design tool, save the v
 - If credits run out or the voice service is unreachable, Fluff falls back to the phone's voice.
 - Like all app audio, Fluff is muted when the iPhone's ring/silent switch is set to silent.
 
+## Setting up Coach Mode
+
+Coach Mode works one **spot** at a time. Each spot is one of the room's scan photos, and Fluff shows that photo so you know where to point the phone. Up high in a corner, leaning on something, works best. Tap **I'm set up**, hold still for a moment, and Fluff checks which chores it can actually see from there (for example "I can see 3 of 4 chores. Turn me a bit to the right."). Chores it can't see are marked **Out of view**; tap those yourself when they're done. When a spot is finished, Fluff asks to be moved to the next one. The **Spot** button at the top skips ahead.
+
+On iPhones with an ultra-wide lens, Coach Mode uses it so one spot covers more of the room (turn this off in Settings > Coach Mode).
+
+The setup check uses the helper's `/frame` route. An older helper without it still works: the app falls back to the regular progress check, which also reports what's out of view.
+
 ## How Coach Mode decides when to check
 
-The phone compares tiny 48×36 snapshots of the camera feed five times a second, entirely on the device. When it sees movement, then stillness for about 2.5 seconds, and enough time has passed since the last check, it sends one photo to the helper along with the before photo and the open chores. Claude replies with which chores are clearly done. Anything blocked or out of view stays open, and you can always tap a chore to mark it done yourself.
+The phone compares tiny 48×36 snapshots of the camera feed five times a second, entirely on the device. When it sees movement, then stillness for about 2.5 seconds, and enough time has passed since the last check, it sends one photo to the helper along with the picture taken when the phone was set up and the open chores it can see from this spot. Claude replies with which chores are clearly done. Anything blocked or out of view stays open, and you can always tap a chore to mark it done yourself.
 
 ## Scanning a room
 
@@ -65,7 +73,16 @@ Take two to four photos from different corners. Fluff looks at them together, ma
 
 ## The 3D house
 
-The House tab shows your home as a cozy dollhouse. Spin it with a finger, pinch to zoom, and tap a room to open it. Rooms with open chores have clutter, rooms that need love grow dust bunnies, and spotless rooms sparkle. Each room is furnished from what Fluff saw in its photos (or a cozy default for the room type), unlocked decor shows up in the room it suits, and Fluff hops over to whichever room needs the most help.
+The House tab shows your home as a cozy dollhouse. Spin it with a finger, pinch to zoom, and tap a room to open it. Rooms with open chores have clutter, rooms that need love grow dust bunnies, and spotless rooms sparkle. Fluff hops over to whichever room needs the most help.
+
+### Decorating
+
+A new house starts bare. Each room shows dotted outlines of its furniture: what Fluff saw in the room's photos, or a cozy default set for the room type. Every chore anyone finishes adds to one household total (nobody's own points go down), and the house unlocks things in order:
+
+- **Furniture** (rugs, beds, sofas, tables, the kitchen, the bathroom and more) fills in the outlines by itself.
+- **Decor** (a fern, a lamp, a basket, a fish tank, a teddy bear, an indoor tree, a blanket fort and more) goes in the **decor box**. Every 200 household sparkles adds a bonus copy of something already earned.
+
+Tap **Decorate** on the House tab, pick a piece from the box, then tap a spot in any room to put it there. Tap a placed piece to turn it, move it or put it back in the box. Tap an outline to see what unlocks it. The Rewards tab shows the whole ladder. Placed decor syncs to every phone.
 
 Tap **Edit floor plan** to drag rooms into the shape of your house and resize them (each square is about a meter). Floor tabs let you add a basement, an upstairs and a third floor; tap a room to move it to another floor, with a faint outline of the floor below for lining things up. On the House tab, **All floors** stacks them like an open dollhouse (a basement shows as a cutaway in the lawn), or pick one floor to see just that level. Patios and yards get deck boards and a picket fence instead of walls. The plan syncs to every phone. The house is drawn with Three.js (in `vendor/`, MIT license) from `house.js`, so it works offline.
 

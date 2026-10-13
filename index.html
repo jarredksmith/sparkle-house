@@ -348,6 +348,20 @@ h1,h2,h3{font-family:var(--display);line-height:1.1;margin:0}
 @keyframes blink{50%{opacity:.3}}
 .chip.status{min-width:0;flex:0 1 auto;display:inline-flex}
 .coach .hud2{position:relative;padding:8px 14px 0}
+.coach .setup{position:relative;margin:12px 0 0;width:calc(100% - 28px);color:var(--ink);background:rgba(255,255,255,.96);border-radius:24px;padding:14px 16px 16px;box-shadow:0 6px 0 rgba(0,0,0,.12);display:flex;flex-direction:column;gap:8px;max-width:440px;align-self:center;max-height:calc(100vh - 330px);overflow:auto}
+.coach .setup[hidden]{display:none}
+.setup .st-title{font-size:19px;font-weight:900}
+.setup img{width:100%;max-height:150px;object-fit:cover;border-radius:16px;display:block}
+.setup .st-cap{font-size:12.5px;font-weight:800;color:var(--ink-soft);margin-top:-4px}
+.setup .st-text{margin:0;font-weight:700;color:var(--ink-soft);display:flex;align-items:center;gap:8px}
+.setup .st-tips{margin:0;padding-left:20px;font-weight:600;font-size:14.5px;line-height:1.35;display:grid;gap:4px}
+.setup .row{display:flex;gap:8px}.setup .row .btn{flex:1}
+.setup .spin{width:18px;height:18px;border-radius:50%;border:3px solid var(--line);border-top-color:var(--leaf);animation:spin .8s linear infinite;flex:none}
+@keyframes spin{to{transform:rotate(360deg)}}
+.ctask em{font-style:normal;font-size:11px;font-weight:800;background:#EEF1F4;color:var(--ink-soft);border-radius:999px;padding:2px 7px;white-space:nowrap}
+.ctask em.out{background:#FFE9C7;color:#9A5B00}
+.ctask.other{opacity:.6}
+.set-note{display:block;margin:-6px 0 10px;font-weight:600;color:var(--ink-soft);font-size:13px}
 .coach .bottom .row .btn{font-size:16px;padding:13px 8px}
 .chip.status span:last-child{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .chip.timer{margin-left:auto;flex:none}
@@ -476,7 +490,7 @@ const fresh = () => ({
     { id: 'bathroom', name: 'Bathroom', emoji: '🛁', shine: 50, shineAt: Date.now(), created: 4 }
   ],
   sessions: {},
-  settings: { workerUrl: '', token: '', sound: true, voice: false, voiceId: '', minGap: 20, camera: 'environment', pep: 'light' },
+  settings: { workerUrl: '', token: '', sound: true, voice: false, voiceId: '', minGap: 20, camera: 'environment', pep: 'light', wide: true },
   household: { lifetime: 0 },
   unlocked: [],
   streak: { count: 0, last: '' },
@@ -922,6 +936,18 @@ const api = {
     const befores = Array.isArray(beforeB64) ? beforeB64 : beforeB64 ? [beforeB64] : [];
     const afters = Array.isArray(afterB64) ? afterB64 : [afterB64];
     return this.call('/verify', { before: befores[0] || null, after: afters[0], befores, afters, tasks, persona: personaId() });
+  },
+  // Coach setup: which of these chores can the camera see right now?
+  async frame(view, reference, tasks) {
+    if (!this.live) { await wait(900); return { visible: tasks.map((t) => t.id), tip: '' }; }
+    try { return await this.call('/frame', { view, reference, tasks }); }
+    catch (e) {
+      if (!/not found/i.test(e.message)) throw e;
+      // An older helper without /frame: its progress check also says which chores are out of view.
+      const r = await this.verify(reference, view, tasks);
+      const blocked = new Set(r.blocked || []);
+      return { visible: tasks.filter((t) => !blocked.has(t.id)).map((t) => t.id), tip: '' };
+    }
   },
   async pushKey() {
     const r = await fetch(this.base() + '/push/key', { headers: { 'X-App-Token': S.settings.token || '' } });
@@ -1419,7 +1445,9 @@ function openSettings() {
       <option value="chatty" ${st.pep === 'chatty' ? 'selected' : ''}>Chatty, keeps you moving</option>
     </select><small>Cheers you on, nudges you when you stall, and tracks your sparkles. Chatty uses more AI voice credits.</small></label>
     <label class="field"><span>Wait at least <span id="gapVal">${st.minGap}</span> seconds between checks</span><input id="sGap" type="range" min="10" max="60" step="5" value="${st.minGap}"><small>Longer waits mean fewer AI checks.</small></label>
-    <label class="toggle">Sound when chores are done<input id="sSound" type="checkbox" ${st.sound ? 'checked' : ''}></label>`;
+    <label class="toggle">Sound when chores are done<input id="sSound" type="checkbox" ${st.sound ? 'checked' : ''}></label>
+    <label class="toggle">Use the wide lens when the phone has one<input id="sWide" type="checkbox" ${st.wide !== false ? 'checked' : ''}></label>
+    <small class="set-note">The wide lens sees more of the room from one spot.</small>`;
   const house = `<h4 class="set-sub">Household sync</h4>
     <div id="syncBox">${syncHTML()}</div>
     <h4 class="set-sub">People</h4>
@@ -1468,6 +1496,7 @@ function saveSettingsForm() {
   S.settings.minGap = Number($('#sGap').value);
   S.settings.pep = $('#sPep').value;
   S.settings.sound = $('#sSound').checked;
+  if ($('#sWide')) S.settings.wide = $('#sWide').checked;
   S.settings.voice = $('#sVoice').checked;
   if ($('#sVoiceId')) S.settings.voiceId = $('#sVoiceId').value;
   if ($('#nDailyOn')) readNotifyForm();
@@ -2278,6 +2307,10 @@ const LINES = {
     greet: ['Hi {name}! Which room are we tackling?'],
     greetList: ['Hi {name}! The {room} list is still waiting for you.'],
     greetNeedy: ['Hi {name}! The {room} could use some love.'],
+    setup: ['Prop me up high in a corner, pointing where you took this photo. Then tap I\'m set up!'],
+    spotNext: ['Spot done! Carry me to spot {n}, then tap I\'m set up.'],
+    seeAll: ['I can see all {count} from here. Let\'s sparkle!'],
+    seeSome: ['I can see {n} of {m} chores from here. {tip}'],
     startFirst: ['Prop me up where I can see the whole room, then get to work. I\'ll check whenever you step out of the way.'],
     start: ['Let\'s make the {room} sparkle! I\'ll check when you step back.'],
     done: ['Every chore is done! The room is sparkling. You earned {pts} sparkles this session.'],
@@ -2308,6 +2341,10 @@ const LINES = {
     greet: ['Morning, recruit {name}! Pick a room. We move out on your command.'],
     greetList: ['Recruit {name}! Your {room} mission is still open. Get back out there!'],
     greetNeedy: ['Recruit {name}, the {room} is a disaster zone. Time to deploy.'],
+    setup: ['Post me up high in a corner, aimed where that photo was taken. Tap I\'m set up when ready, recruit.'],
+    spotNext: ['Sector cleared! Move me to spot {n} and tap I\'m set up.'],
+    seeAll: ['All {count} in sight. Move out!'],
+    seeSome: ['I have eyes on {n} of {m} chores. {tip}'],
     startFirst: ['Set me where I can see the whole battlefield, recruit. Step out of the way and I\'ll inspect your work.'],
     start: ['The {room} is your mission, recruit. Move out! I inspect when you step back.'],
     done: ['Mission complete! Every chore done. {pts} sparkles earned. Outstanding work, recruit!'],
@@ -2338,6 +2375,10 @@ const LINES = {
     greet: ['Oh, hi {name}. I was napping. Which room are we pretending to care about?'],
     greetList: ['Hey {name}. The {room} list is still there. I checked. Twice. From bed.'],
     greetNeedy: ['{name}, the {room} looks like I feel. Just saying.'],
+    setup: ['Lean me somewhere high, facing where you took this photo. Tap I\'m set up. I\'ll be here. Resting.'],
+    spotNext: ['This spot\'s done. Carry me to spot {n}. Gently. Then tap I\'m set up.'],
+    seeAll: ['I can see all {count}. Unfortunately. Go.'],
+    seeSome: ['I can see {n} of {m} chores from here. {tip}'],
     startFirst: ['Put me somewhere I can see the room. I\'ll watch. Lying down. When you step away, I\'ll look.'],
     start: ['Okay. The {room}. You clean, I\'ll supervise from this very comfy spot.'],
     done: ['Every chore is done. The room sparkles. {pts} sparkles. I\'m... genuinely impressed. Don\'t tell anyone.'],
@@ -2368,6 +2409,10 @@ const LINES = {
     greet: ['Ahoy, {name}! Which room be needin\' a good swabbin\'?'],
     greetList: ['Ahoy, {name}! The {room} still has treasure to plunder!'],
     greetNeedy: ['Shiver me timbers, {name}! The {room} be a shipwreck!'],
+    setup: ['Hoist me up high in a corner, facin\' where ye took this picture. Tap I\'m set up, matey!'],
+    spotNext: ['This deck be clean! Haul me to spot {n} and tap I\'m set up.'],
+    seeAll: ['All {count} in me spyglass. Hop to it!'],
+    seeSome: ['I spy {n} of {m} chores from here. {tip}'],
     startFirst: ['Prop me up in the crow\'s nest where I can see the whole deck. Step away and I\'ll check yer haul.'],
     start: ['Set sail for the {room}, matey! I\'ll inspect the deck when ye step back.'],
     done: ['The deck be spotless! Every chore done and {pts} sparkles of treasure. Fine work, matey!'],
@@ -2435,7 +2480,7 @@ function pepTick() {
   const mode = S.settings.pep;
   const T = PEP_TIMING[mode];
   const sess = S.sessions[C.roomId];
-  if (!T || !C.el || C.checking || !sess || !C.stream || CH.active) return;
+  if (!T || !C.el || C.checking || !sess || !C.stream || CH.active || !C.ready) return;
   const open = sess.tasks.filter((t) => !t.done);
   if (!open.length) return;
   const now = Date.now();
@@ -2701,7 +2746,7 @@ async function startCoach(roomId) {
   unlockAudio();
   const room = roomById(roomId);
   Object.assign(C, { roomId, start: Date.now(), pts: 0, motion: 0, lastMotion: 0, activity: false, lastCheck: Date.now(), checking: false, prev: null, lastStatus: '',
-    lastSpoke: 0, lastPepAt: Date.now(), activeMs: 0, nudges: 0, nextRecap: Date.now() + (PEP_TIMING[S.settings.pep] || PEP_TIMING.light).recap, ms: {}, pepLast: {} });
+    lastSpoke: 0, lastPepAt: Date.now(), activeMs: 0, nudges: 0, ready: false, setup: null, spot: 0, base: null, visible: null, saidOut: false, nextRecap: Date.now() + (PEP_TIMING[S.settings.pep] || PEP_TIMING.light).recap, ms: {}, pepLast: {} });
   mem.newUnlocks = [];
   const el = document.createElement('section');
   el.className = 'coach'; el.id = 'coach';
@@ -2711,10 +2756,12 @@ async function startCoach(roomId) {
       <button class="chip" data-act="coach-end">End</button>
       <button class="chip flip" data-act="coach-flip" aria-label="Switch between front and back camera"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 8h3l2-3h6l2 3h3v11H4z"/><path d="M9.5 12.5a2.7 2.7 0 0 1 4.7-1.6"/><path d="M14.5 13.5a2.7 2.7 0 0 1-4.7 1.6"/><path d="M14.4 9.6v1.6h-1.6"/><path d="M9.6 16.4v-1.6h1.6"/></svg></button>
       <button class="chip flip" data-act="coach-area" aria-label="Set focus area"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 7l6-3 8 4-2 11-10 1z" stroke-dasharray="3 2.4"/><circle cx="5" cy="7" r="1.6" fill="currentColor"/><circle cx="19" cy="8" r="1.6" fill="currentColor"/><circle cx="7" cy="20" r="1.6" fill="currentColor"/></svg></button>
+      <button class="chip spot" data-act="coach-spot" id="cSpot" hidden></button>
       <span class="chip timer" id="cTime">0:00</span>
       <span class="chip score">${STAR()}<span id="cPts">0</span></span>
     </div>
     <div class="hud2"><span class="chip status"><span class="dot" id="cDot"></span><span id="cStatus">Starting camera</span></span></div>
+    <div class="setup" id="cSetup" hidden aria-live="polite"></div>
     <div class="ch-banner" id="chBanner" hidden aria-live="polite"><div class="ch-time" id="chTime">1:00</div><div class="ch-label" id="chLabel">Beat the clock</div></div>
     <div class="bottom">
       <div class="speaker">${fluffSVG()}<div class="dialog"><span class="tag">Fluff</span><span id="coachLine"></span></div></div>
@@ -2723,9 +2770,12 @@ async function startCoach(roomId) {
     </div>`;
   document.body.appendChild(el);
   C.el = el; C.video = el.querySelector('video');
+  // Start at the first spot (scan photo) that still has open chores.
+  const firstSpot = coachSpots().find((sp) => sp.open.length);
+  C.spot = firstSpot ? firstSpot.photo : 0;
   renderCoachTasks();
-  const firstTime = !S.coachTipSeen;
-  coachLine(firstTime ? line('startFirst') : line('start', { room: room.name.toLowerCase() }));
+  showSetup('place');
+  coachLine(line('setup'));
   S.coachTipSeen = true; save();
   try {
     await openCamera(S.settings.camera);
@@ -2749,7 +2799,23 @@ async function startCoach(roomId) {
 async function openCamera(facing) {
   if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) throw new Error('nocam');
   if (C.stream) C.stream.getTracks().forEach((t) => t.stop());
-  C.stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: { ideal: facing }, width: { ideal: 1280 }, height: { ideal: 960 } }, audio: false });
+  const size = { width: { ideal: 1280 }, height: { ideal: 960 } };
+  let stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: { ideal: facing }, ...size }, audio: false });
+  C.wide = false;
+  // The ultra-wide lens sees much more of a room from one spot, so use it when the phone has one.
+  if (facing === 'environment' && S.settings.wide !== false) {
+    try {
+      const cams = (await navigator.mediaDevices.enumerateDevices()).filter((d) => d.kind === 'videoinput');
+      const uw = cams.find((d) => /ultra ?wide/i.test(d.label) && !/dual|triple/i.test(d.label));
+      const cur = (stream.getVideoTracks()[0].getSettings() || {}).deviceId;
+      if (uw && uw.deviceId && uw.deviceId !== cur) {
+        stream.getTracks().forEach((t) => t.stop());
+        try { stream = await navigator.mediaDevices.getUserMedia({ video: { deviceId: { exact: uw.deviceId }, ...size }, audio: false }); C.wide = true; }
+        catch (e) { stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: { ideal: facing }, ...size }, audio: false }); }
+      } else if (uw && uw.deviceId === cur) C.wide = true;
+    } catch (e) { /* keep the regular lens */ }
+  }
+  C.stream = stream;
   const actual = (C.stream.getVideoTracks()[0].getSettings() || {}).facingMode || facing;
   C.facing = facing;
   $('#cam').classList.toggle('mirror', actual === 'user');
@@ -2760,9 +2826,10 @@ async function openCamera(facing) {
   refreshArea();
 }
 /* Focus area in Coach Mode: saved per room and per camera, since the phone usually sits in the same spot. */
+const areaKey = () => (C.facing || 'environment') + (C.wide ? '-wide' : '');
 function coachArea() {
   const room = roomById(C.roomId);
-  return room && room.coachArea ? room.coachArea[C.facing || 'environment'] || null : null;
+  return room && room.coachArea ? room.coachArea[areaKey()] || null : null;
 }
 function refreshArea() {
   const area = coachArea();
@@ -2815,7 +2882,7 @@ async function editCoachArea() {
     tip: 'Tap points around the part of the room to clean. Fluff ignores everything outside it, from this phone spot.' });
   if (area === undefined) return;
   room.coachArea = room.coachArea || {};
-  room.coachArea[C.facing || 'environment'] = area;
+  room.coachArea[areaKey()] = area;
   save(); refreshArea();
   coachLine(area ? 'Got it! I\'ll only watch inside that area.' : 'Okay, I\'ll watch the whole view.', false);
 }
@@ -2827,18 +2894,123 @@ async function flipCamera() {
     await openCamera(next);
     S.settings.camera = next; save();
     coachLine(next === 'user' ? 'Front camera on. Now you can see what I see!' : 'Back camera on.', false);
+    if (C.ready || C.setup === 'result') setupReady(); // new view: look again
   } catch (e) {
     coachLine('I couldn\'t switch cameras. Trying the other one again.', false);
     try { await openCamera(S.settings.camera); } catch (err) { /* stays off */ }
   } finally { C.flipping = false; }
 }
+// Spots: one per scan photo. The phone sits where that photo was taken and watches those chores.
+function coachSpots() {
+  const sess = S.sessions[C.roomId];
+  if (!sess) return [];
+  const by = new Map();
+  sess.tasks.forEach((t) => { const p = t.photo || 0; if (!by.has(p)) by.set(p, []); by.get(p).push(t); });
+  return [...by.entries()].sort((a, b) => a[0] - b[0]).map(([photo, tasks]) => ({ photo, tasks, open: tasks.filter((t) => !t.done) }));
+}
+function spotNumber(photo) { return coachSpots().findIndex((sp) => sp.photo === photo) + 1; }
+function spotPhoto(photo) {
+  const b = mem.before[C.roomId];
+  if (!b) return null;
+  return (b.photos && b.photos[photo]) || (photo === 0 && b.dataUrl ? b : null);
+}
+function spotOpen() { const sess = S.sessions[C.roomId]; return sess ? sess.tasks.filter((t) => !t.done && (t.photo || 0) === C.spot) : []; }
+function inView(t) { return !C.visible || C.visible.has(t.id); }
 function renderCoachTasks() {
   const sess = S.sessions[C.roomId];
   const box = $('#cTasks');
   if (!box || !sess) return;
-  const sorted = [...sess.tasks].sort((a, b) => a.done - b.done);
-  box.innerHTML = sorted.map((t) => `<button class="ctask ${t.done ? 'done' : ''}" data-act="coach-toggle" data-id="${t.id}" aria-pressed="${t.done}"><span>${esc(t.title)}</span><span class="pts">${t.points}</span></button>`).join('');
+  const multi = coachSpots().length > 1;
+  // This spot's chores first (ones the camera can see, then out of view), then other spots, then done.
+  const rank = (t) => (t.done ? 3 : (t.photo || 0) !== C.spot ? 2 : C.ready && !inView(t) ? 1 : 0);
+  const sorted = [...sess.tasks].sort((a, b) => rank(a) - rank(b));
+  box.innerHTML = sorted.map((t) => {
+    const r = rank(t);
+    const tag = r === 1 ? '<em class="out">Out of view</em>' : r === 2 && multi ? `<em>Spot ${spotNumber(t.photo || 0)}</em>` : '';
+    return `<button class="ctask ${t.done ? 'done' : ''}${r === 2 ? ' other' : ''}" data-act="coach-toggle" data-id="${t.id}" aria-pressed="${t.done}"><span>${esc(t.title)}</span>${tag}<span class="pts">${t.points}</span></button>`;
+  }).join('');
   $('#cPts').textContent = C.pts;
+  const chip = $('#cSpot'), spots = coachSpots();
+  if (chip) { chip.hidden = spots.length < 2; chip.textContent = `Spot ${spotNumber(C.spot)}/${spots.length}`; }
+}
+// The setup card: where to put the phone, then a quick check of what it can see from there.
+function showSetup(kind, a = '', b = '') {
+  const el = $('#cSetup');
+  if (!el) return;
+  if (!kind) { el.hidden = true; el.innerHTML = ''; return; }
+  el.hidden = false;
+  const spots = coachSpots(), n = spotNumber(C.spot);
+  const ph = spotPhoto(C.spot);
+  if (kind === 'place') {
+    const first = !S.setupTipSeen;
+    el.innerHTML = `<b class="st-title">${a ? esc(a) : spots.length > 1 ? `Spot ${n} of ${spots.length}` : 'Set me up'}</b>
+      ${ph ? `<img src="${ph.dataUrl}" alt="Where to point the camera"><span class="st-cap">Point me at this view</span>` : ''}
+      ${first ? `<ol class="st-tips"><li><b>Up high</b> works best: a shelf, dresser or counter, leaning on something.</li><li><b>In a corner</b>, pointing into the room${ph ? ', like the photo' : ''}.</li><li><b>Room too big?</b> I'll do it one spot at a time.</li></ol>`
+        : `<p class="st-text">Up high in a corner works best, leaning on something.</p>`}
+      <button class="btn sun" data-act="coach-ready">I'm set up</button>`;
+  } else if (kind === 'checking') {
+    el.innerHTML = `<b class="st-title">Hold still…</b><p class="st-text"><span class="spin"></span>Checking what I can see from here.</p>`;
+  } else if (kind === 'result') {
+    el.innerHTML = `<b class="st-title">${esc(a)}</b><p class="st-text">${esc(b)}</p>
+      <div class="row"><button class="btn" data-act="coach-recheck">Check again</button><button class="btn sun" data-act="coach-go">Start</button></div>`;
+  }
+}
+function setupReady() {
+  S.setupTipSeen = true; storeLocal();
+  C.ready = false; C.setup = 'settling'; C.setupAt = Date.now(); C.visible = null;
+  showSetup('checking');
+  renderCoachTasks();
+}
+async function frameCheck() {
+  if (!C.el || !C.video || !C.video.videoWidth) return;
+  C.setup = 'checking';
+  const view = grabFrame(960);
+  C.base = view.b64; // the before picture for this spot
+  const open = spotOpen();
+  const ref = spotPhoto(C.spot);
+  let res;
+  try { res = await api.frame(view.b64, ref ? ref.small : null, open.map((t) => ({ id: t.id, title: t.title, zone: t.zone }))); }
+  catch (e) { res = { visible: open.map((t) => t.id), tip: '', failed: true }; }
+  if (!C.el || C.setup !== 'checking') return;
+  C.visible = new Set(res.visible);
+  const n = open.filter((t) => C.visible.has(t.id)).length, m = open.length;
+  if (res.failed || n === m) { startSpot(m ? line('seeAll', { count: m === 1 ? 'the chore' : `${m} chores` }) : ''); return; }
+  C.setup = 'result';
+  const tip = res.tip || (n ? 'Move me so I can see more, or start with these.' : 'Try putting me higher up or further back.');
+  showSetup('result', n ? `I can see ${n} of ${m} chores` : 'I can\'t see the chores from here', tip);
+  renderCoachTasks();
+  coachLine(n ? line('seeSome', { n, m, tip }) : `I can't see the chores from here. ${tip}`);
+}
+function startSpot(msg) {
+  C.ready = true; C.setup = null; C.saidOut = false;
+  C.lastCheck = Date.now(); C.activity = false; C.lastPepAt = Date.now();
+  showSetup(null);
+  renderCoachTasks();
+  const open = spotOpen();
+  if (open.length && !open.some(inView)) { C.saidOut = true; coachLine('Okay! Tap chores when you finish them. I\'ll keep watching.'); return; }
+  coachLine(msg || line('start', { room: (roomById(C.roomId) || { name: 'room' }).name.toLowerCase() }));
+}
+function moveToSpot(photo, msg) {
+  C.spot = photo; C.ready = false; C.visible = null; C.base = null; C.saidOut = false; C.setup = 'place';
+  showSetup('place', msg);
+  renderCoachTasks();
+}
+// After a chore is done: move on when this spot is finished, or say so when only out-of-view chores are left.
+function afterSpotProgress() {
+  if (!C.el) return;
+  const left = coachSpots().filter((sp) => sp.open.length);
+  if (!left.length) return;
+  const open = spotOpen();
+  if (!open.length) {
+    const next = left.find((sp) => sp.photo > C.spot) || left[0];
+    const n = spotNumber(next.photo);
+    setTimeout(() => { if (!C.el) return; moveToSpot(next.photo, `Spot done! Now spot ${n}`); coachLine(line('spotNext', { n })); }, 2200);
+    return;
+  }
+  if (C.ready && !open.some(inView) && !C.saidOut) {
+    C.saidOut = true;
+    setTimeout(() => C.el && coachLine(`That's everything I can see from here! Tap the others when they're done${left.length > 1 ? ', or move me to the next spot' : ''}.`), 2200);
+  }
 }
 function grabFrame(max, masked = true) {
   const v = C.video;
@@ -2868,6 +3040,12 @@ function coachTick() {
   const now = Date.now();
   if (C.motion > MOVE) { C.lastMotion = now; C.activity = true; C.activeMs += 200; C.nudges = 0; }
   else if (now - C.lastMotion > 5000) C.activeMs = 0;
+  if (C.setup === 'settling') {
+    // Wait for the phone to stop wobbling after it's propped up (or 6 seconds), then look.
+    if ((C.motion < CALM && now - C.lastMotion > 1500 && now - C.setupAt > 1200) || now - C.setupAt > 6000) frameCheck();
+    return setStatus('checking', 'Looking around…');
+  }
+  if (!C.ready) return setStatus('', C.setup === 'checking' ? 'Looking around…' : 'Set me up');
   const gapLeft = Math.ceil((S.settings.minGap * 1000 - (now - C.lastCheck)) / 1000);
   if (C.checking) return setStatus('checking', 'Checking…');
   if (C.motion > MOVE) return setStatus('moving', 'You\'re working');
@@ -2879,14 +3057,17 @@ function coachTick() {
 async function runCheck(manual, opts = {}) {
   const sess = S.sessions[C.roomId];
   if (C.checking || !sess || !C.video || !C.video.videoWidth) return;
-  const open = sess.tasks.filter((t) => !t.done);
-  if (!open.length) return;
+  if (!C.ready) { if (manual) { if (C.setup === 'place') setupReady(); else if (C.setup === 'result') startSpot(); } return; }
+  // Only this spot's chores that the camera can see. The rest get tapped by hand.
+  const open = spotOpen().filter(inView);
+  if (!open.length) { if (manual) coachLine('I can\'t see any open chores from here. Tap them when they\'re done, or move me.', false); return; }
   C.checking = true; C.activity = false; C.lastCheck = Date.now();
   setStatus('checking', 'Checking…');
   const after = grabFrame(960);
-  const before = mem.before[C.roomId];
+  const ref = spotPhoto(C.spot) || mem.before[C.roomId];
+  const before = C.base || (ref && ref.small) || null;
   try {
-    const res = await api.verify(before ? before.small : null, after.b64, open.map((t) => ({ id: t.id, title: t.title, zone: t.zone })));
+    const res = await api.verify(before, after.b64, open.map((t) => ({ id: t.id, title: t.title, zone: t.zone })));
     if (!C.el) return;
     const r = applyVerify(C.roomId, res, 'coach');
     if (opts.silent) {
@@ -2907,6 +3088,7 @@ async function runCheck(manual, opts = {}) {
     }
     renderCoachTasks();
     if (sess.tasks.every((t) => t.done)) coachDone();
+    else if (r.count) afterSpotProgress();
   } catch (e) {
     if (C.el) coachLine('I couldn\'t reach the AI helper. I\'ll try again on the next check.', false);
   } finally { C.checking = false; C.lastCheck = Date.now(); C.lastStatus = ''; }
@@ -3058,6 +3240,16 @@ document.addEventListener('click', (e) => {
     case 'coach': startCoach(ui.roomId); break;
     case 'coach-end': stopCoach(); break;
     case 'coach-check': unlockAudio(); runCheck(true); break;
+    case 'coach-ready': unlockAudio(); setupReady(); break;
+    case 'coach-recheck': setupReady(); break;
+    case 'coach-go': startSpot(); break;
+    case 'coach-spot': {
+      const left = coachSpots().filter((sp) => sp.open.length && sp.photo !== C.spot);
+      if (!left.length) { toast('This is the only spot with chores left.'); break; }
+      const next = left.find((sp) => sp.photo > C.spot) || left[0];
+      moveToSpot(next.photo); coachLine(line('setup'), false);
+      break;
+    }
     case 'coach-flip': flipCamera(); break;
     case 'coach-area': editCoachArea(); break;
     case 'sync-setup': runSyncSetup('auto'); break;
@@ -3124,6 +3316,7 @@ document.addEventListener('click', (e) => {
       else { const g = awardTask(C.roomId, t, 'hand'); C.pts += g; pop(`+${g} ✦`); chime(); coachFluff(true); pepAfterAward(); challengeOnAward(); }
       renderCoachTasks();
       if (sess.tasks.every((x) => x.done)) coachDone();
+      else if (t.done) afterSpotProgress();
       break;
     }
     case 'add-task': openAddTask(); break;

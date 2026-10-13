@@ -122,6 +122,24 @@ Rules:
 - Solid gray areas are outside the part of the room being cleaned. Ignore anything in them.
 - Never describe the people in the photo.
 - "zone" is the ninth of the photo where the item is, or "none" if you can't see it or there's no photo.`;
+// Coach Mode setup: which chores can the propped-up phone actually see from where it is?
+const FRAME_SYSTEM = `You help set up a phone camera that watches a family clean a room. You get the camera's current view, usually a reference photo of the same area taken when the chore list was made, and the chores for that area.
+
+Decide which chores' areas are clearly in view in the CURRENT view (in frame, not hidden behind furniture, not too dark or blurry to judge). Use the reference photo and each chore's zone to know where each chore is.
+
+If some chores are out of view, give one short tip for moving the phone so it sees more, in plain words a child could follow (for example "Move me a little higher" or "Turn me a bit to the left"). If everything is in view, the tip is an empty string.
+
+Answer in the required JSON format.`;
+const FRAME_SCHEMA = {
+  type: 'object',
+  properties: {
+    visible: { type: 'array', items: { type: 'string' }, description: 'IDs of chores whose area is clearly in view.' },
+    tip: { type: 'string', description: 'One short tip, max 12 words, for moving the phone to see more. Empty if everything is visible.' }
+  },
+  required: ['visible', 'tip'],
+  additionalProperties: false
+};
+
 const ASK_SCHEMA = {
   type: 'object',
   properties: {
@@ -174,6 +192,7 @@ export default {
     try {
       if (url.pathname === '/analyze') return reply(await analyze(body, env));
       if (url.pathname === '/verify') return reply(await verify(body, env));
+      if (url.pathname === '/frame') return reply(await frame(body, env));
       if (url.pathname === '/ask') return reply(await ask(body, env));
       if (url.pathname.startsWith('/push/')) return reply(await pushRoute(url.pathname, body, env));
       if (url.pathname === '/sync') return reply(await syncRoute(body, env));
@@ -550,6 +569,19 @@ async function verify(body, env) {
     blocked: (Array.isArray(j.blocked) ? j.blocked : []).map(String).filter((id) => ids.has(id)),
     feedback: String(j.feedback || '').slice(0, 140)
   };
+}
+
+async function frame(body, env) {
+  if (!isB64(body.view)) throw badRequest('No photo received.');
+  const tasks = (Array.isArray(body.tasks) ? body.tasks : []).slice(0, 30).map((t) => ({ id: String(t.id).slice(0, 20), title: String(t.title || '').slice(0, 90), zone: t.zone || 'unknown' }));
+  if (!tasks.length) return { visible: [], tip: '' };
+  const content = [];
+  if (isB64(body.reference)) content.push({ type: 'text', text: 'Reference photo (when the list was made):' }, imageBlock(body.reference));
+  content.push({ type: 'text', text: 'CURRENT camera view:' }, imageBlock(body.view));
+  content.push({ type: 'text', text: `Chores for this area:\n${JSON.stringify(tasks)}` });
+  const j = await askClaude(env, env.MODEL_VERIFY || 'claude-haiku-5-5', FRAME_SYSTEM, content, FRAME_SCHEMA, 600);
+  const ids = new Set(tasks.map((t) => t.id));
+  return { visible: (Array.isArray(j.visible) ? j.visible : []).map(String).filter((id) => ids.has(id)), tip: String(j.tip || '').slice(0, 90) };
 }
 
 async function ask(body, env) {
