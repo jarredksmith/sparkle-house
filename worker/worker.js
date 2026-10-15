@@ -105,11 +105,17 @@ const PERSONA_STYLE = {
   sunny: 'a bubbly, warm cheerleader who celebrates every bit of progress',
   sarge: 'a friendly drill sergeant: short, punchy, firm but never mean or insulting, calls them "recruit"',
   snooze: 'a sleepy, deadpan dust bunny with gentle, dry sarcasm who is secretly proud of them; never mean',
-  captain: 'a jolly pirate captain who talks about treasure and swabbing the deck, says "arr" and "matey"'
+  captain: 'a jolly pirate captain who talks about treasure and swabbing the deck, says "arr" and "matey"',
+  glitz: 'a flamboyant, theatrical diva and makeover-show judge: dramatic, witty and sarcastic about the MESS (never about the person), calls them "darling" or "sweetie", gasps, swoons and gives standing ovations for progress'
 };
-function withPersona(system, persona) {
+// Persona voice, plus the lines Fluff said recently so the AI doesn't repeat them.
+function withPersona(system, persona, recent) {
   const style = PERSONA_STYLE[persona];
-  return style ? `${system}\n\nVoice: write the summary, feedback or answer in the voice of Fluff, ${style}. Keep it kid-friendly and keep the same length limits. Chore titles stay plain and clear.` : system;
+  let out = style ? `${system}\n\nVoice: write the summary, feedback or answer in the voice of Fluff, ${style}. Keep it kid-friendly and keep the same length limits. Chore titles stay plain and clear.` : system;
+  const said = (Array.isArray(recent) ? recent : []).map((r) => String(r).slice(0, 140)).filter(Boolean).slice(-8);
+  out += '\n\nVary your wording every time: fresh openings, no stock phrases.';
+  if (said.length) out += ` Fluff said these recently, so don't repeat them or start the same way:\n- ${said.join('\n- ')}`;
+  return out;
 }
 
 const ASK_SYSTEM = `You are Fluff, a friendly helper in a family chore game. Someone is cleaning a room and has a question, usually that they can't find the item a chore mentions.
@@ -451,6 +457,16 @@ const PUSH_COPY = {
     line: ' Also, your {n}-day streak. No pressure.', weekT: 'Your week, summarized sleepily', freshT: 'New week. Ugh. Fine.',
     flashT: 'Double sparkles. Wow.', flashB: 'Chores in the next 30 minutes count double. Even I\'m tempted. Not really.'
   },
+  glitz: {
+    streakT: ['Darling, your {n}-day streak ends at midnight!', 'The drama{name}! Your streak!'],
+    streakB: ['One teeny chore saves your {n}-day streak. Do it for me.', 'Your {n}-day streak is about to flop. One chore and it\'s a comeback story.'],
+    listT: ['Your list misses you, darling', 'Sweetie{name}, the list', 'Still waiting backstage'],
+    listB: '{open} left in the {room}. One quick chore and you\'re fabulous again.{line}',
+    needyT: 'The {room} is having a moment', needyB: 'A quick makeover would fix everything. Glitz believes in you.{line}',
+    anyT: ['Makeover time, darling?', 'Darling{name}! Let\'s be fabulous', 'Ten minutes of glamour'], anyB: 'Snap a messy room and Glitz will turn it into a show.{line}',
+    line: ' Protect that {n}-day streak, superstar.', weekT: 'Your fabulous week', freshT: 'New week, new season',
+    flashT: 'Double sparkles, darling!', flashB: 'Every chore in the next 30 minutes counts double. Go be iconic!'
+  },
   captain: {
     streakT: ['Arr! Yer {n}-day streak sinks at midnight!', "Don't let her sink{name}!"],
     streakB: ['One chore keeps yer {n}-day streak afloat, matey!', 'Swab one deck before bed and save {n} days of treasure!'],
@@ -534,7 +550,7 @@ async function analyze(body, env) {
   const content = [];
   photos.forEach((p, i) => { if (photos.length > 1) content.push({ type: 'text', text: `Photo ${i + 1}:` }); content.push(imageBlock(p)); });
   content.push({ type: 'text', text: photos.length > 1 ? `These ${photos.length} photos show the ${room} from different spots. Make one chore list for the whole room.` : `This is the ${room}. Make the chore list.` });
-  const j = await askClaude(env, env.MODEL_ANALYZE || 'claude-sonnet-5-5', withPersona(ANALYZE_SYSTEM, body.persona), content, CHORE_SCHEMA, 5000);
+  const j = await askClaude(env, env.MODEL_ANALYZE || 'claude-sonnet-5-5', withPersona(ANALYZE_SYSTEM, body.persona, body.recent), content, CHORE_SCHEMA, 5000);
   const tasks = (Array.isArray(j.tasks) ? j.tasks : []).slice(0, 15).map((t) => ({
     title: String(t.title || '').trim().slice(0, 90),
     detail: String(t.detail || '').trim().slice(0, 120),
@@ -562,7 +578,7 @@ async function verify(body, env) {
   befores.forEach((p, i) => content.push({ type: 'text', text: befores.length > 1 ? `BEFORE photo ${i + 1}:` : 'BEFORE photo:' }, imageBlock(p)));
   afters.forEach((p, i) => content.push({ type: 'text', text: afters.length > 1 ? `AFTER photo ${i + 1}:` : 'AFTER photo:' }, imageBlock(p)));
   content.push({ type: 'text', text: `Open chores:\n${JSON.stringify(tasks)}` });
-  const j = await askClaude(env, env.MODEL_VERIFY || 'claude-haiku-5-5', withPersona(VERIFY_SYSTEM, body.persona), content, PROGRESS_SCHEMA, 1500);
+  const j = await askClaude(env, env.MODEL_VERIFY || 'claude-haiku-5-5', withPersona(VERIFY_SYSTEM, body.persona, body.recent), content, PROGRESS_SCHEMA, 1500);
   const ids = new Set(tasks.map((t) => t.id));
   return {
     done: (Array.isArray(j.done) ? j.done : []).map(String).filter((id) => ids.has(id)),
@@ -592,7 +608,7 @@ async function ask(body, env) {
   const task = body.task && body.task.title ? `The chore they're asking about: "${String(body.task.title).slice(0, 120)}"${body.task.zone ? ` (listed in the ${body.task.zone} part of the photo)` : ''}.\n` : '';
   const others = Array.isArray(body.tasks) ? body.tasks.slice(0, 20).map((t) => `- ${String(t).slice(0, 100)}`).join('\n') : '';
   content.push({ type: 'text', text: `${task}${others ? `Other open chores:\n${others}\n` : ''}Their question: ${question}` });
-  const j = await askClaude(env, env.MODEL_ASK || 'claude-sonnet-5-5', withPersona(ASK_SYSTEM, body.persona), content, ASK_SCHEMA, 800);
+  const j = await askClaude(env, env.MODEL_ASK || 'claude-sonnet-5-5', withPersona(ASK_SYSTEM, body.persona, body.recent), content, ASK_SCHEMA, 800);
   return { answer: String(j.answer || '').slice(0, 300), zone: pickEnum(j.zone, [...ZONES, 'none'], 'none'), found: !!j.found };
 }
 

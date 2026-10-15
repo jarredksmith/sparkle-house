@@ -174,6 +174,13 @@ function makeFluff(persona) {
   if (persona === 'sarge') { g.add(mesh(geo('cap', () => new THREE.SphereGeometry(0.24, 16, 8, 0, Math.PI * 2, 0, Math.PI / 2)), 0x6b8e4e, 0, 0.62, 0)); g.add(box(0.36, 0.03, 0.18, 0x4e6b38, 0, 0.62, 0.2)); }
   if (persona === 'snooze') { g.add(mesh(geo('nightcap', () => new THREE.ConeGeometry(0.2, 0.42, 16)), 0x8aa8e6, 0.02, 0.86, 0)); g.add(ball(0.06, 0xffffff, 0.1, 1.06, 0)); }
   if (persona === 'captain') { g.add(mesh(geo('hat', () => new THREE.CylinderGeometry(0.3, 0.3, 0.12, 3)), 0x2d3b36, 0, 0.7, 0).rotateY(Math.PI / 2)); }
+  if (persona === 'glitz') {
+    // A gold tiara, pink heart sunglasses and a feather boa.
+    for (let i = -2; i <= 2; i++) { const c = mesh(geo('tiara', () => new THREE.ConeGeometry(0.045, 0.14, 4)), 0xffd447, i * 0.07, 0.72 + (2 - Math.abs(i)) * 0.03, 0.02); g.add(c); }
+    g.add(box(0.36, 0.035, 0.08, 0xffd447, 0, 0.66, 0.02), ball(0.03, 0xff6fb5, 0, 0.78, 0.07, 8));
+    g.add(ball(0.065, 0xff6fb5, -0.09, 0.43, 0.27, 10), ball(0.065, 0xff6fb5, 0.09, 0.43, 0.27, 10), box(0.08, 0.015, 0.02, 0xc2407e, 0, 0.44, 0.3));
+    for (let i = 0; i < 14; i++) { const a = (i / 14) * Math.PI * 2; g.add(ball(0.075, i % 2 ? 0xff8fc8 : 0xffa9d6, Math.cos(a) * 0.29, 0.2 + Math.sin(a * 3) * 0.015, Math.sin(a) * 0.29, 8)); }
+  }
   g.traverse((o) => { o.userData.fluff = true; });
   return g;
 }

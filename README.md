@@ -110,7 +110,7 @@ Fluff can send a daily nudge, a streak saver, a Sunday recap and surprise "Flash
 
 ## Fluff personalities
 
-In Settings, each person picks their own coach: **Sunny** (cheerleader), **Sarge** (drill sergeant), **Snooze** (sleepy and sarcastic) or **Captain** (pirate). The choice changes Fluff's look, everything Fluff says in Coach Mode and challenges, the tone of the AI's feedback and answers, and the wording of that phone's reminders.
+In Settings, each person picks their own coach: **Sunny** (cheerleader), **Sarge** (drill sergeant), **Snooze** (sleepy and sarcastic), **Captain** (pirate) or **Glitz** (a dramatic, sarcastic diva who roasts the mess, never the person). Each coach has 100+ lines, dealt like a shuffled deck so nothing repeats until every version has been said, and the AI is told what Fluff said recently so its feedback doesn't repeat either. The extra lines live in `scripts/lines_more.py`. The choice changes Fluff's look, everything Fluff says in Coach Mode and challenges, the tone of the AI's feedback and answers, and the wording of that phone's reminders.
 
 ## Household sync
 
