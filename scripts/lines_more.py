@@ -101,6 +101,7 @@ MORE = {
 
 # Glitz: a dramatic, sarcastic, gloriously over-the-top house critic. Roasts the mess, never the person.
 GLITZ = {
+  'confirm': ["Darling, is {task} done? Tell me it's done.", "Did {task} just happen? Tap Done, sweetie.", "I sense {task} is finished. Confirm, darling?"],
   'hello': ["Darling! You rang? Let's make this house worthy of me.", "Oh, it's you! Fabulous. Let's do something about this place.", "Glitz has arrived. Hold your applause. Actually, don't.", "Sweetie, I've seen tidier tornadoes. Let's fix that.", "You summoned the fabulous one. Excellent taste."],
   'greet': ["Darling {name}! Which room shall we rescue from fashion disaster?", "{name}! Pick a room, any room. They all need me.", "Well hello, {name}. Which tragedy are we fixing today?"],
   'greetList': ["{name}, darling, the {room} list is still waiting. Like a fan outside my dressing room.", "The {room} is still a work in progress, sweetie. Emphasis on work."],

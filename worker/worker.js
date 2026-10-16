@@ -7,7 +7,7 @@
 //   ALLOWED_ORIGINS    (variable, optional) e.g. "https://yourname.github.io,capacitor://localhost"
 //                      (capacitor://localhost is the iPhone app built from ios-app/)
 //   MODEL_ANALYZE      (variable, optional) default claude-sonnet-5-5
-//   MODEL_VERIFY       (variable, optional) default claude-haiku-5-5
+//   MODEL_VERIFY       (variable, optional) default claude-sonnet-5-5 (progress checks; claude-haiku-5-5 is cheaper but misses more)
 //   ELEVENLABS_API_KEY (secret, optional)  turns on Fluff's AI voice
 //   ELEVENLABS_MODEL   (variable, optional) default eleven_flash_v2_5
 //
@@ -19,33 +19,46 @@ const MAX_BODY = 9 * 1024 * 1024;
 
 // Rough furniture positions, as seen from where the first photo was taken.
 const SPOTS = ['back-left', 'back', 'back-right', 'left', 'center', 'right', 'front-left', 'front', 'front-right'];
-const ANALYZE_SYSTEM = `You help a family turn photos of a messy room into a short, friendly cleaning checklist for a chore game.
+const ANALYZE_SYSTEM = `You help a family turn photos of a messy room into a short, friendly cleaning checklist for a chore game. A child reads each chore and then has to find that exact thing in the room, so every chore must point at something real and easy to find.
 
 You may get up to 4 photos of the same room taken from different spots. Treat them as one room and make one list.
 
-Rules:
-- Only list things you can actually see in the photos. Never invent objects.
+What counts:
+- Only list mess you can clearly see. If you aren't sure what something is, or it's too small, dark or blurry to be sure, leave it out. A short list that's all real beats a long list with guesses.
+- Things that belong where they are aren't mess: furniture, decor, lamps, plants, pictures, appliances, curtains, a made bed, books standing on a shelf, items neatly arranged on a dresser.
 - If the same item shows up in more than one photo, list it only once.
-- Each task names the specific visible object and, when it's obvious, where it should go. Example: "Put the cereal box back in the pantry".
-- Group small identical items into one task, such as "Pick up the 6 toy cars".
-- Skip anything that already looks tidy. Do not mention or describe any people in the photo.
+- Skip anything that already looks tidy. Do not mention or describe any people in the photos.
 - Solid gray areas are outside the part of the room being cleaned. Ignore anything in them.
-- Order tasks in a sensible cleaning flow: trash first, then things to put away, then surfaces, then floors.
+
+How to write each chore:
+- "title": an action plus the object, named the way a kid would see it, with its color or a clear feature: "Put the blue water bottle in the kitchen", "Throw away the crumpled paper", "Pick up the 3 socks". Never vague words like "items", "stuff" or "clutter" on their own.
+- "where": exactly where to look, using big landmarks anyone can spot from the doorway: "on the desk, left of the monitor", "on the floor at the foot of the bed", "on the couch's right cushion". Never photo words like "top-left" or "in the photo".
+- Group small identical items into one chore, such as "Pick up the 6 toy cars".
+- Order chores in a sensible cleaning flow: trash first, then things to put away, then surfaces, then floors.
 - Points reflect effort: 2-5 for a quick grab, 6-12 for a few minutes of work, 13-25 for a big job.
-- "photo" is the number of the photo where the item is easiest to see (1 if there's only one photo). "zone" is the ninth of THAT photo where the item sits: one of ${ZONES.join(', ')}.
-- Also list the main furniture and big objects you can see (up to 12), such as sofa, bed, table, chairs, desk, TV, bookshelf, dresser, fridge, counter, sink, stove, toilet, bathtub, washer, rug, plant, lamp. Use one or two plain words for each. "spot" is roughly where it sits in the room, as if looking in from where the first photo was taken: ${SPOTS.join(', ')}.
-- Return 3 to 12 tasks. If the room already looks tidy, return no tasks and say so in the summary. If the photo isn't of a room, return no tasks and say what you see in the summary.
+- "photo" is the number of the photo where the item is easiest to see (1 if there's only one photo).
+- "box" is the item's bounding box in THAT photo as [x0, y0, x1, y1] in thousandths of the photo's width and height (0 to 1000, with 0,0 at the top-left corner). Keep it snug around the item, or around the group for grouped items.
+- "zone" is the ninth of that photo where the item sits: one of ${ZONES.join(', ')}.
+- "sure" is true only if you're confident the item is really there and really out of place.
+
+Also list the main furniture and big objects you can see (up to 12), such as sofa, bed, table, chairs, desk, TV, bookshelf, dresser, fridge, counter, sink, stove, toilet, bathtub, washer, rug, plant, lamp. Use one or two plain words for each. "spot" is roughly where it sits in the room, as if looking in from where the first photo was taken: ${SPOTS.join(', ')}.
+
+Return up to 12 chores. If the room already looks tidy, return no chores and say so in the summary. If the photo isn't of a room, return no chores and say what you see in the summary.
 
 Answer with the chore list in the required JSON format.`;
 
-const VERIFY_SYSTEM = `You check progress in a family chore game. You get the open chores for a room, one or more recent AFTER photos, and usually one or more BEFORE photos taken when the list was made. Several photos are the same room from different spots.
+const VERIFY_SYSTEM = `You check progress in a family chore game. You get the open chores for a room, a BEFORE photo taken when cleaning started (or when the list was made) and an AFTER photo from right now. Usually the camera hasn't moved; if it has, match up the same areas.
 
-Rules:
-- The camera may have moved a little between photos. Compare the same areas, using each task's zone as a hint.
+How to decide each chore:
+- Find the chore's object in BEFORE using its title and "where", then look at that same spot in AFTER.
+- Pick up, put away, throw away or take-to-another-room chores: done when the object is GONE from that spot. It does not need to be visible anywhere else.
+- Wipe or clean a surface: done when that surface now looks clear and clean.
+- Floor chores: done when that part of the floor is clear.
+- Straighten, fold, make or tidy chores: done when it now looks neat.
+- "done": clearly finished. "likely": it looks finished, but you can't be completely sure (for example, something might be partly hidden or the view is a bit blurry). "blocked": a person or object is in the way, or the spot is out of frame. A chore goes in at most one list; anything else is still open.
 - A person may be in the AFTER photo. Ignore them and don't describe them.
 - Solid gray areas are outside the part of the room being cleaned. Ignore anything in them.
-- Mark a task done only when the AFTER photo clearly shows it is finished. If the area is hidden, blocked, or out of frame, do not mark it done.
-- Be fair but encouraging. Never mark a task done just to be nice.
+- Be fair. Never mark a chore done just to be nice, and don't hold back when the object is clearly gone.
 
 Answer in the required JSON format.`;
 
@@ -61,15 +74,18 @@ const CHORE_SCHEMA = {
       items: {
         type: 'object',
         properties: {
-          title: { type: 'string', description: 'The chore, max 70 characters, naming the specific visible object.' },
+          title: { type: 'string', description: 'The chore, max 70 characters, naming the specific visible object with its color or a clear feature.' },
+          where: { type: 'string', description: 'Where to look, max 60 characters, using big room landmarks.' },
           detail: { type: 'string', description: 'Short optional tip, or an empty string.' },
           photo: { type: 'integer', description: 'Which photo (1-4) shows this item best.' },
+          box: { type: 'array', items: { type: 'integer' }, description: 'Bounding box [x0, y0, x1, y1] in thousandths (0-1000) of that photo.' },
           zone: { type: 'string', enum: ZONES },
+          sure: { type: 'boolean', description: 'True only if you are confident it is really there and out of place.' },
           points: { type: 'integer', description: 'Effort points from 1 to 25.' },
           minutes: { type: 'integer', description: 'Estimated minutes from 1 to 90.' },
           category: { type: 'string', enum: CATEGORIES }
         },
-        required: ['title', 'detail', 'photo', 'zone', 'points', 'minutes', 'category'],
+        required: ['title', 'where', 'detail', 'photo', 'box', 'zone', 'sure', 'points', 'minutes', 'category'],
         additionalProperties: false
       }
     },
@@ -93,10 +109,11 @@ const PROGRESS_SCHEMA = {
   type: 'object',
   properties: {
     done: { type: 'array', items: { type: 'string' }, description: 'IDs of chores that are clearly finished.' },
+    likely: { type: 'array', items: { type: 'string' }, description: 'IDs of chores that look finished but you are not completely sure.' },
     blocked: { type: 'array', items: { type: 'string' }, description: 'IDs of chores whose area is hidden or out of frame.' },
     feedback: { type: 'string', description: 'One upbeat line, max 14 words. Name what was finished, or nudge toward an easy remaining chore.' }
   },
-  required: ['done', 'blocked', 'feedback'],
+  required: ['done', 'likely', 'blocked', 'feedback'],
   additionalProperties: false
 };
 
@@ -131,7 +148,7 @@ Rules:
 // Coach Mode setup: which chores can the propped-up phone actually see from where it is?
 const FRAME_SYSTEM = `You help set up a phone camera that watches a family clean a room. You get the camera's current view, usually a reference photo of the same area taken when the chore list was made, and the chores for that area.
 
-Decide which chores' areas are clearly in view in the CURRENT view (in frame, not hidden behind furniture, not too dark or blurry to judge). Use the reference photo and each chore's zone to know where each chore is.
+Decide which chores' areas are clearly in view in the CURRENT view (in frame, not hidden behind furniture, not too dark or blurry to judge). Use each chore's title and "where" (and the reference photo, if there is one) to know where each chore is. The reference photo was taken from a different spot, so match landmarks, not positions in the frame.
 
 If some chores are out of view, give one short tip for moving the phone so it sees more, in plain words a child could follow (for example "Move me a little higher" or "Turn me a bit to the left"). If everything is in view, the tip is an empty string.
 
@@ -551,10 +568,13 @@ async function analyze(body, env) {
   photos.forEach((p, i) => { if (photos.length > 1) content.push({ type: 'text', text: `Photo ${i + 1}:` }); content.push(imageBlock(p)); });
   content.push({ type: 'text', text: photos.length > 1 ? `These ${photos.length} photos show the ${room} from different spots. Make one chore list for the whole room.` : `This is the ${room}. Make the chore list.` });
   const j = await askClaude(env, env.MODEL_ANALYZE || 'claude-sonnet-5-5', withPersona(ANALYZE_SYSTEM, body.persona, body.recent), content, CHORE_SCHEMA, 5000);
-  const tasks = (Array.isArray(j.tasks) ? j.tasks : []).slice(0, 15).map((t) => ({
+  // Chores the AI wasn't sure about are dropped: a chore nobody can find is worse than a missing one.
+  const tasks = (Array.isArray(j.tasks) ? j.tasks : []).filter((t) => t && t.sure !== false).slice(0, 15).map((t) => ({
     title: String(t.title || '').trim().slice(0, 90),
+    where: String(t.where || '').trim().slice(0, 80),
     detail: String(t.detail || '').trim().slice(0, 120),
     photo: clampNum(t.photo, 1, photos.length, 1),
+    box: cleanBox(t.box),
     zone: pickEnum(t.zone, ZONES, 'center'),
     points: clampNum(t.points, 1, 25, 4),
     minutes: clampNum(t.minutes, 1, 90, 2),
@@ -571,17 +591,21 @@ async function verify(body, env) {
   const befores = photoList(body.befores, body.before);
   if (!afters.length) throw badRequest('No photo received.');
   const tasks = (Array.isArray(body.tasks) ? body.tasks : []).slice(0, 30).map((t) => ({
-    id: String(t.id).slice(0, 20), title: String(t.title || '').slice(0, 90), zone: t.zone || 'unknown', ...(t.photo ? { photo: clampNum(t.photo, 1, 4, 1) } : {})
+    id: String(t.id).slice(0, 20), title: String(t.title || '').slice(0, 90),
+    ...(t.where ? { where: String(t.where).slice(0, 80) } : { zone: t.zone || 'unknown' }),
+    ...(t.photo ? { photo: clampNum(t.photo, 1, 4, 1) } : {})
   }));
-  if (!tasks.length) return { done: [], blocked: [], feedback: 'Everything is already done!' };
+  if (!tasks.length) return { done: [], likely: [], blocked: [], feedback: 'Everything is already done!' };
   const content = [];
   befores.forEach((p, i) => content.push({ type: 'text', text: befores.length > 1 ? `BEFORE photo ${i + 1}:` : 'BEFORE photo:' }, imageBlock(p)));
   afters.forEach((p, i) => content.push({ type: 'text', text: afters.length > 1 ? `AFTER photo ${i + 1}:` : 'AFTER photo:' }, imageBlock(p)));
   content.push({ type: 'text', text: `Open chores:\n${JSON.stringify(tasks)}` });
-  const j = await askClaude(env, env.MODEL_VERIFY || 'claude-haiku-5-5', withPersona(VERIFY_SYSTEM, body.persona, body.recent), content, PROGRESS_SCHEMA, 1500);
+  const j = await askClaude(env, env.MODEL_VERIFY || 'claude-sonnet-5-5', withPersona(VERIFY_SYSTEM, body.persona, body.recent), content, PROGRESS_SCHEMA, 1500);
   const ids = new Set(tasks.map((t) => t.id));
+  const done = (Array.isArray(j.done) ? j.done : []).map(String).filter((id) => ids.has(id));
   return {
-    done: (Array.isArray(j.done) ? j.done : []).map(String).filter((id) => ids.has(id)),
+    done,
+    likely: (Array.isArray(j.likely) ? j.likely : []).map(String).filter((id) => ids.has(id) && !done.includes(id)),
     blocked: (Array.isArray(j.blocked) ? j.blocked : []).map(String).filter((id) => ids.has(id)),
     feedback: String(j.feedback || '').slice(0, 140)
   };
@@ -589,13 +613,13 @@ async function verify(body, env) {
 
 async function frame(body, env) {
   if (!isB64(body.view)) throw badRequest('No photo received.');
-  const tasks = (Array.isArray(body.tasks) ? body.tasks : []).slice(0, 30).map((t) => ({ id: String(t.id).slice(0, 20), title: String(t.title || '').slice(0, 90), zone: t.zone || 'unknown' }));
+  const tasks = (Array.isArray(body.tasks) ? body.tasks : []).slice(0, 30).map((t) => ({ id: String(t.id).slice(0, 20), title: String(t.title || '').slice(0, 90), ...(t.where ? { where: String(t.where).slice(0, 80) } : {}) }));
   if (!tasks.length) return { visible: [], tip: '' };
   const content = [];
   if (isB64(body.reference)) content.push({ type: 'text', text: 'Reference photo (when the list was made):' }, imageBlock(body.reference));
   content.push({ type: 'text', text: 'CURRENT camera view:' }, imageBlock(body.view));
   content.push({ type: 'text', text: `Chores for this area:\n${JSON.stringify(tasks)}` });
-  const j = await askClaude(env, env.MODEL_VERIFY || 'claude-haiku-5-5', FRAME_SYSTEM, content, FRAME_SCHEMA, 600);
+  const j = await askClaude(env, env.MODEL_VERIFY || 'claude-sonnet-5-5', FRAME_SYSTEM, content, FRAME_SCHEMA, 600);
   const ids = new Set(tasks.map((t) => t.id));
   return { visible: (Array.isArray(j.visible) ? j.visible : []).map(String).filter((id) => ids.has(id)), tip: String(j.tip || '').slice(0, 90) };
 }
@@ -605,7 +629,7 @@ async function ask(body, env) {
   if (!question) throw badRequest('Ask Fluff a question first.');
   const content = [];
   if (isB64(body.image)) content.push({ type: 'text', text: 'Photo of the room right now:' }, imageBlock(body.image));
-  const task = body.task && body.task.title ? `The chore they're asking about: "${String(body.task.title).slice(0, 120)}"${body.task.zone ? ` (listed in the ${body.task.zone} part of the photo)` : ''}.\n` : '';
+  const task = body.task && body.task.title ? `The chore they're asking about: "${String(body.task.title).slice(0, 120)}"${body.task.where ? ` (when the list was made it was ${String(body.task.where).slice(0, 80)})` : body.task.zone ? ` (listed in the ${body.task.zone} part of the photo)` : ''}.\n` : '';
   const others = Array.isArray(body.tasks) ? body.tasks.slice(0, 20).map((t) => `- ${String(t).slice(0, 100)}`).join('\n') : '';
   content.push({ type: 'text', text: `${task}${others ? `Other open chores:\n${others}\n` : ''}Their question: ${question}` });
   const j = await askClaude(env, env.MODEL_ASK || 'claude-sonnet-5-5', withPersona(ASK_SYSTEM, body.persona, body.recent), content, ASK_SCHEMA, 800);
@@ -682,6 +706,14 @@ async function askClaude(env, model, system, content, schema, maxTokens) {
   }
 }
 
+// A bounding box as [x0, y0, x1, y1] in thousandths, or null if it doesn't make sense.
+function cleanBox(b) {
+  if (!Array.isArray(b) || b.length !== 4) return null;
+  const n = b.map((v) => clampNum(v, 0, 1000, -1));
+  if (n.includes(-1)) return null;
+  const [x0, y0, x1, y1] = [Math.min(n[0], n[2]), Math.min(n[1], n[3]), Math.max(n[0], n[2]), Math.max(n[1], n[3])];
+  return x1 - x0 >= 8 && y1 - y0 >= 8 ? [x0, y0, x1, y1] : null;
+}
 function pickEnum(v, list, dflt) { const x = String(v || '').toLowerCase().trim(); return list.find((o) => o === x) || dflt; }
 function badRequest(msg) { const e = new Error(msg); e.status = 400; return e; }
 function imageBlock(b64) {

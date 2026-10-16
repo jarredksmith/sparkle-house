@@ -107,6 +107,21 @@ h1,h2,h3{font-family:var(--display);line-height:1.1;margin:0}
 .zones{position:absolute;inset:0;display:grid;grid-template-columns:repeat(3,1fr);grid-template-rows:repeat(3,1fr)}
 .zone{position:relative;display:grid;place-items:center;border-radius:16px;margin:4px;transition:background .2s, box-shadow .2s}
 .zone.hot{background:rgba(255,212,71,.28);box-shadow:inset 0 0 0 3px var(--sun)}
+.boxes{position:absolute;inset:0;pointer-events:none}
+.tbox{position:absolute;border:3px solid var(--sun);border-radius:12px;box-shadow:0 0 0 2000px rgba(20,28,25,.35);animation:tboxin .35s ease-out}
+@keyframes tboxin{from{transform:scale(1.25);opacity:0}to{transform:none;opacity:1}}
+.pin{position:absolute;pointer-events:auto;width:22px;height:22px;margin:-11px 0 0 -11px;border-radius:50%;border:3px solid #fff;background:var(--berry);box-shadow:0 2px 0 rgba(0,0,0,.25);padding:0}
+.pin.on{background:var(--sun);transform:scale(1.2)}
+.shot-q{position:absolute;left:40px;top:10px;background:#C2405E;color:#fff;font-weight:800;font-size:11px;border-radius:999px;padding:2px 8px}
+.shot-warn{margin:10px 0 0;font-weight:700;color:#9A2F4A;font-size:14px}
+.twhere{font-size:13px;font-weight:700;color:var(--leaf);margin-top:2px}
+.twhere::before{content:'📍 ';font-size:12px}
+.likely{background:var(--bubble);border:3px solid var(--bubble-edge);border-radius:20px;padding:10px 12px;margin:0 0 12px;display:grid;gap:8px}
+.likely-row{display:flex;align-items:center;gap:8px}.likely-row span{flex:1;font-weight:700}
+.coach .confirm{background:rgba(255,255,255,.96);color:var(--ink);border-radius:18px;padding:10px 12px;margin:0 0 8px;display:flex;align-items:center;gap:8px;box-shadow:0 3px 0 rgba(0,0,0,.12)}
+.coach .confirm[hidden]{display:none}
+.coach .confirm span{flex:1;font-weight:800;font-size:15px;line-height:1.25}
+.ctask small{display:block;font-weight:700;font-size:11.5px;color:var(--leaf);margin-top:2px}
 .zone .mk{border:0;min-width:34px;height:34px;border-radius:999px;background:var(--berry);color:#fff;font-weight:800;font-family:var(--display);font-size:17px;box-shadow:0 3px 0 #C2405E;padding:0 8px}
 .no-photo{display:flex;gap:12px;align-items:center;margin-bottom:16px;font-weight:700;font-size:15px;color:var(--ink-soft)}
 .progress{margin:18px 0 10px;display:flex;align-items:center;gap:12px;font-weight:800}
@@ -549,6 +564,7 @@ function migrate(s) {
   return s;
 }
 let S = load();
+setTimeout(() => loadPhotos(), 0);
 // The ultra-wide lens became opt-in after it stopped some phones switching to the back camera.
 if (!S.settings.wideOptIn) { S.settings.wide = false; S.settings.wideOptIn = true; }
 recompute();
@@ -577,7 +593,7 @@ function save() {
 }
 
 // Photos live only in memory, never in storage.
-const mem = { before: {}, selected: null, lastFeedback: {}, photoIdx: {} };
+const mem = { before: {}, selected: null, lastFeedback: {}, photoIdx: {}, likely: {} };
 let ui = { view: 'home', roomId: null };
 
 const player = () => S.players.find((p) => p.id === S.current) || S.players[0];
@@ -926,7 +942,58 @@ function applyVerify(roomId, res, how) {
     const t = sess.tasks.find((x) => x.id === id && !x.done);
     if (t) { pts += awardTask(roomId, t, how); count++; }
   });
-  return { count, pts };
+  // "Likely" done: Fluff asks instead of guessing.
+  const likely = (res.likely || []).filter((id) => sess.tasks.some((x) => x.id === id && !x.done));
+  return { count, pts, likely };
+}
+// A bounding box from the AI as [x0, y0, x1, y1] in thousandths of the photo, or null.
+/* Scan photos stay on this phone (IndexedDB), so the room view keeps its markers and Coach Mode keeps its
+   reference photos after the app is closed. They're never synced or uploaded anywhere except to the helper
+   for a check. */
+let photoDbP = null;
+function photoDb() {
+  if (!('indexedDB' in window)) return Promise.reject(new Error('no db'));
+  return photoDbP = photoDbP || new Promise((ok, bad) => {
+    const r = indexedDB.open('sparkle-photos', 1);
+    r.onupgradeneeded = () => r.result.createObjectStore('rooms');
+    r.onsuccess = () => ok(r.result); r.onerror = () => bad(r.error);
+  });
+}
+async function savePhotos(roomId) {
+  try {
+    const db = await photoDb(), b = mem.before[roomId];
+    const tx = db.transaction('rooms', 'readwrite'), st = tx.objectStore('rooms');
+    if (b && (b.photos || b.dataUrl)) st.put({ photos: (b.photos || [b]).map((p) => ({ dataUrl: p.dataUrl, small: p.small, area: p.area || null })), at: Date.now() }, roomId);
+    else st.delete(roomId);
+  } catch (e) { /* storage unavailable: photos last until the app closes */ }
+}
+async function loadPhotos() {
+  try {
+    const db = await photoDb();
+    const st = db.transaction('rooms').objectStore('rooms');
+    const req = (r) => new Promise((ok, bad) => { r.onsuccess = () => ok(r.result); r.onerror = () => bad(r.error); });
+    const [keys, vals] = await Promise.all([req(st.getAllKeys()), req(st.getAll())]);
+    let any = false;
+    keys.forEach((k, i) => {
+      const v = vals[i];
+      if (!v || !v.photos || !v.photos.length || mem.before[k]) return;
+      if (!roomById(k)) { savePhotos(k); return; } // room was removed
+      mem.before[k] = { photos: v.photos, dataUrl: v.photos[0].dataUrl, small: v.photos[0].small, area: v.photos[0].area };
+      any = true;
+    });
+    if (any && ui.view === 'room' && !C.el) render();
+  } catch (e) { /* nothing saved */ }
+}
+function clearPhotos() { photoDb().then((db) => db.transaction('rooms', 'readwrite').objectStore('rooms').clear()).catch(() => {}); }
+function validBox(b) {
+  if (!Array.isArray(b) || b.length !== 4 || b.some((v) => !Number.isFinite(Number(v)))) return null;
+  const [x0, y0, x1, y1] = b.map(Number);
+  return x1 - x0 >= 8 && y1 - y0 >= 8 ? [x0, y0, x1, y1].map((v) => clamp(Math.round(v), 0, 1000)) : null;
+}
+// What the AI needs to find a chore. Landmarks ("on the desk, by the lamp") work from any camera spot;
+// zones only make sense on the scan photo they came from, so they're sent only when sameView is true.
+function choreForAI(t, sameView) {
+  return { id: t.id, title: t.title, ...(t.where ? { where: t.where } : sameView && t.zone ? { zone: t.zone } : {}), ...(sameView ? { photo: (t.photo || 0) + 1 } : {}) };
 }
 
 /* ---------- images ---------- */
@@ -1151,26 +1218,35 @@ function renderRoom() {
   const open = sess.tasks.filter((t) => !t.done);
   const done = sess.tasks.length - open.length;
   const zoneCounts = {};
-  open.forEach((t) => { if (t.zone && (t.photo || 0) === pi) zoneCounts[t.zone] = (zoneCounts[t.zone] || 0) + 1; });
+  open.forEach((t) => { if (!t.box && t.zone && (t.photo || 0) === pi) zoneCounts[t.zone] = (zoneCounts[t.zone] || 0) + 1; });
   const sel = sess.tasks.find((t) => t.id === mem.selected);
+  // Chores with a box get a pin on the photo; the selected one gets an outline around the item itself.
+  const pins = open.filter((t) => t.box && (t.photo || 0) === pi).map((t) => `<button class="pin${sel && sel.id === t.id ? ' on' : ''}" data-act="select" data-id="${t.id}" style="left:${(t.box[0] + t.box[2]) / 20}%;top:${(t.box[1] + t.box[3]) / 20}%" aria-label="Show: ${esc(t.title)}"></button>`).join('');
+  const hotBox = sel && !sel.done && sel.box && (sel.photo || 0) === pi ? (() => {
+    const pad = 25, [x0, y0, x1, y1] = [Math.max(0, sel.box[0] - pad), Math.max(0, sel.box[1] - pad), Math.min(1000, sel.box[2] + pad), Math.min(1000, sel.box[3] + pad)];
+    return `<div class="tbox" style="left:${x0 / 10}%;top:${y0 / 10}%;width:${(x1 - x0) / 10}%;height:${(y1 - y0) / 10}%"></div>`;
+  })() : '';
+  const likely = (mem.likely[room.id] || []).map((id) => sess.tasks.find((t) => t.id === id && !t.done)).filter(Boolean);
   const photo = img
     ? `<div class="photo"><img src="${img.dataUrl}" alt="Your photo of the ${esc(room.name.toLowerCase())}">
         ${img.area ? `<svg class="area-ov" viewBox="0 0 1 1" preserveAspectRatio="none">${areaOverlaySVG(img.area)}</svg>` : ''}
-        <div class="zones">${ZONES.map((z) => `<div class="zone ${mem.askZone === z ? 'ask' : sel && sel.zone === z && (sel.photo || 0) === pi ? 'hot' : ''}">${zoneCounts[z] ? `<button class="mk" data-act="zone" data-zone="${z}" aria-label="${zoneCounts[z]} tasks here">${zoneCounts[z]}</button>` : ''}</div>`).join('')}</div></div>
+        <div class="zones">${ZONES.map((z) => `<div class="zone ${mem.askZone === z ? 'ask' : sel && !sel.box && sel.zone === z && (sel.photo || 0) === pi ? 'hot' : ''}">${zoneCounts[z] ? `<button class="mk" data-act="zone" data-zone="${z}" aria-label="${zoneCounts[z]} tasks here">${zoneCounts[z]}</button>` : ''}</div>`).join('')}</div>
+        <div class="boxes">${hotBox}${pins}</div></div>
         ${shots.length > 1 ? `<div class="thumbs" role="tablist" aria-label="Room photos">${shots.map((p, i) => {
           const left = open.filter((t) => (t.photo || 0) === i).length;
           return `<button class="thumb" role="tab" aria-selected="${i === pi}" data-act="photo-pick" data-i="${i}" aria-label="Photo ${i + 1}, ${left} chores"><img src="${p.dataUrl}" alt="">${left ? `<span>${left}</span>` : ''}</button>`;
         }).join('')}</div>` : ''}`
-    : `<div class="no-photo">${fluffSVG()}<span>Photos aren't kept after you close the app. Use “Scan again” to see where each task is.</span></div>`;
+    : `<div class="no-photo">${fluffSVG()}<span>No photo of this room on this phone. Use “Scan again” to see where each chore is.</span></div>`;
   const fb = mem.lastFeedback[room.id] || sess.summary || '';
   app.innerHTML = head + photo + `
     ${fb ? `<div class="speaker">${fluffSVG(done === sess.tasks.length ? 'happy' : '')}<div class="dialog"><span class="tag">Fluff</span><span id="roomLine"></span></div></div>` : ''}
+    ${likely.length ? `<div class="likely"><b>Fluff thinks ${likely.length === 1 ? 'this is' : 'these are'} done. Right?</b>${likely.map((t) => `<div class="likely-row"><span>${esc(t.title)}</span><button class="btn small primary" data-act="likely-yes" data-id="${t.id}">Done</button><button class="btn small" data-act="likely-no" data-id="${t.id}">Not yet</button></div>`).join('')}</div>` : ''}
     <div class="progress"><span>${done} of ${sess.tasks.length} done</span><div class="bar"><i style="width:${(100 * done) / sess.tasks.length}%"></i></div></div>
     <ul class="tasks">${sess.tasks.map((t) => {
       const by = t.done ? S.players.find((p) => p.id === t.by) : null;
       return `<li class="task ${t.done ? 'done' : ''} ${mem.selected === t.id ? 'sel' : ''}" data-act="select" data-id="${t.id}">
         <button class="tick" data-act="toggle" data-id="${t.id}" aria-pressed="${t.done}" aria-label="${t.done ? 'Undo' : 'Mark done'}: ${esc(t.title)}">${CHECK}</button>
-        <div class="tbody"><div class="ttl">${esc(t.title)}</div>${t.detail && !t.done ? `<div class="tdet">${esc(t.detail)}</div>` : ''}${by ? `<div class="by">${esc(by.name)}${t.how === 'coach' || t.how === 'photo' ? ', checked by Fluff' : ''}</div>` : ''}</div>
+        <div class="tbody"><div class="ttl">${esc(t.title)}</div>${t.where && !t.done ? `<div class="twhere">${esc(t.where)}</div>` : ''}${t.detail && !t.done ? `<div class="tdet">${esc(t.detail)}</div>` : ''}${by ? `<div class="by">${esc(by.name)}${t.how === 'coach' || t.how === 'photo' ? ', checked by Fluff' : ''}</div>` : ''}</div>
         <div class="tmeta"><span class="pts">${t.points} ✦</span>${t.minutes ? `<span class="min">${t.minutes} min</span>` : ''}</div>
         ${mem.selected === t.id ? `<div class="task-actions"><button class="btn" data-act="edit-task" data-id="${t.id}">Edit</button><button class="btn danger" data-act="delete-task" data-id="${t.id}">Delete</button>${t.done ? '' : `<button class="btn" data-act="ask-task" data-id="${t.id}">Where is it?</button>`}</div>` : ''}
       </li>`;
@@ -1548,7 +1624,7 @@ function settingsMeta(key) {
     case 'house': return `${SY.on ? (SY.error ? 'Sync problem' : 'Synced') : 'Not synced'} · ${S.players.length === 1 ? '1 person' : S.players.length + ' people'} · ${plural(S.rooms.length, 'room')}`;
     case 'remind': return S.notify.on ? 'On' : 'Off';
     case 'helper': return String(val('#sUrl', st.workerUrl)).trim() ? 'Set up' : 'Demo mode, not connected';
-    case 'privacy': return 'Photos are never saved';
+    case 'privacy': return 'Photos stay on this phone';
     default: return '';
   }
 }
@@ -1592,7 +1668,7 @@ function openSettings() {
     <label class="field">Household passcode<input id="sToken" autocapitalize="off" autocorrect="off" value="${esc(st.token)}"><small>Must match the APP_TOKEN you set on the helper.</small></label>
     <button class="btn small" data-act="test-helper">Test connection</button>
     <div id="sStatus"></div>`;
-  const privacy = `<p style="margin:0 0 12px">Photos go to your AI helper to be checked and aren't saved on this phone or the helper. Points and lists are stored on this phone, and in your own Cloudflare database when household sync is on.</p>
+  const privacy = `<p style="margin:0 0 12px">Room photos are kept only on this phone, so it can show where each chore is. They go to your AI helper just to be checked, and the helper never saves them. Points and lists are stored on this phone, and in your own Cloudflare database when household sync is on.</p>
     <button class="btn text" data-act="reset" style="color:#C2405E;padding-left:0">Reset everything on this phone</button>`;
   openSheet(`<h2>Settings</h2>
     <p class="set-intro">Changes save when you close this. Swipe sideways to close.</p>
@@ -1759,7 +1835,7 @@ function openAreaEditor({ src, w, h, mirror = false, initial = null, tip }) {
    per item; sparkle totals are worked out from events, so points are never lost. */
 const SYNC_KEY = 'sparklehouse.sync';
 const SYNC_BATCH = 500;
-const TASK_FIELDS = ['title', 'detail', 'photo', 'zone', 'points', 'minutes', 'category', 'done', 'how', 'doneAt', 'by', 'flash'];
+const TASK_FIELDS = ['title', 'detail', 'where', 'box', 'photo', 'zone', 'points', 'minutes', 'category', 'done', 'how', 'doneAt', 'by', 'flash'];
 function loadSync() {
   const d = { on: false, since: 0, base: {}, last: 0, error: '' };
   try { return Object.assign(d, JSON.parse(localStorage.getItem(SYNC_KEY) || '{}')); } catch (e) { return d; }
@@ -2312,6 +2388,29 @@ function busy(text) {
   document.body.appendChild(b);
 }
 const unbusy = () => { const b = $('#busy'); if (b) b.remove(); };
+// A quick look at a photo before it goes to the AI: too dark or too blurry photos are the main reason
+// Fluff "sees" things that aren't there, so it's worth a retake.
+async function photoQuality(dataUrl) {
+  try {
+    const img = await loadImage(dataUrl);
+    const w = 320, h = Math.max(1, Math.round((img.naturalHeight / img.naturalWidth) * w));
+    const c = document.createElement('canvas'); c.width = w; c.height = h;
+    const ctx = c.getContext('2d', { willReadFrequently: true });
+    ctx.drawImage(img, 0, 0, w, h);
+    const d = ctx.getImageData(0, 0, w, h).data, g = new Float32Array(w * h);
+    let sum = 0;
+    for (let i = 0; i < g.length; i++) { g[i] = 0.299 * d[i * 4] + 0.587 * d[i * 4 + 1] + 0.114 * d[i * 4 + 2]; sum += g[i]; }
+    const mean = sum / g.length;
+    // Sharpness: how much the brightness changes between neighbors (variance of the Laplacian).
+    let m = 0, m2 = 0, n = 0;
+    for (let y = 1; y < h - 1; y++) for (let x = 1; x < w - 1; x++) {
+      const i = y * w + x, l = 4 * g[i] - g[i - 1] - g[i + 1] - g[i - w] - g[i + w];
+      m += l; m2 += l * l; n++;
+    }
+    const sharp = n ? m2 / n - (m / n) ** 2 : 999;
+    return mean < 45 ? 'dark' : sharp < 18 ? 'blurry' : '';
+  } catch (e) { return ''; }
+}
 async function onPhoto(file) {
   if (!file) return;
   const room = roomById(SCAN.roomId || ui.roomId);
@@ -2326,7 +2425,7 @@ async function onPhoto(file) {
   const area = SCAN.mode === 'after'
     ? ((before && before.photos && before.photos[i] && before.photos[i].area) || roomAreas(room)[i] || null)
     : (roomAreas(room)[i] || null);
-  SCAN.photos.push({ dataUrl: full.dataUrl, area });
+  SCAN.photos.push({ dataUrl: full.dataUrl, area, quality: await photoQuality(full.dataUrl) });
   openScanSheet();
 }
 function openScanSheet() {
@@ -2337,6 +2436,7 @@ function openScanSheet() {
       <img src="${p.dataUrl}" alt="Photo ${i + 1}">
       ${p.area ? `<svg class="area-ov" viewBox="0 0 1 1" preserveAspectRatio="none">${areaOverlaySVG(p.area)}</svg>` : ''}
       <span class="shot-n">${i + 1}</span>
+      ${p.quality ? `<span class="shot-q">${p.quality === 'dark' ? 'Too dark' : 'Blurry'}</span>` : ''}
       <button class="shot-x" data-act="scan-del" data-i="${i}" aria-label="Remove photo ${i + 1}">✕</button>
       ${after ? '' : `<button class="shot-area" data-act="scan-area" data-i="${i}">${p.area ? 'Edit area' : 'Focus area'}</button>`}
     </div>`).join('');
@@ -2344,9 +2444,12 @@ function openScanSheet() {
     ? (n < 2 ? 'Take photos from the same spots as before so Fluff can compare.' : 'Got it. Check now, or add another angle.')
     : (n < 2 ? 'Nice! Now take one from another corner so Fluff sees the whole room.' : n < MAX_SHOTS ? 'Looking good. Scan now, or add another angle.' : 'That\'s the max. Ready to scan!');
   const go = after ? `Check ${n === 1 ? 'this photo' : `${n} photos`}` : `Scan ${n === 1 ? 'this photo' : `${n} photos`}`;
+  const bad = SCAN.photos.find((p) => p.quality);
+  const qualityTip = bad ? `<p class="shot-warn">${bad.quality === 'dark' ? 'One photo is pretty dark. Turn on a light and retake it, so Fluff doesn\'t guess.' : 'One photo looks blurry. Hold still and retake it, so Fluff doesn\'t guess.'} Tap ✕ to remove it.</p>` : '';
   openSheet(`<h2>${after ? 'Check my work' : `Photos of the ${esc(room.name.toLowerCase())}`}</h2>
     <p class="set-intro" style="margin-top:-4px">${tip}</p>
     <div class="shots">${shots}</div>
+    ${qualityTip}
     ${n < MAX_SHOTS ? `<div class="row" style="margin-top:12px">
       <button class="btn ${n < 2 ? 'primary' : ''}" data-act="scan-more" data-src="cam">${ICON.camera}Take another photo</button>
       <button class="btn small" data-act="scan-more" data-src="lib">Library</button></div>` : ''}
@@ -2379,18 +2482,19 @@ async function runScan() {
       prepared.push({
         dataUrl: p.dataUrl, area: p.area || null,
         send: toJpeg(src, src.naturalWidth, src.naturalHeight, 1280, 0.82, p.area).b64,
-        small: toJpeg(src, src.naturalWidth, src.naturalHeight, 768, 0.78, p.area).b64
+        small: toJpeg(src, src.naturalWidth, src.naturalHeight, 960, 0.8, p.area).b64
       });
     }
     const res = await api.analyze(prepared.map((p) => p.send), room.name);
     const photos = prepared.map(({ dataUrl, small, area }) => ({ dataUrl, small, area }));
     mem.before[room.id] = { photos, dataUrl: photos[0].dataUrl, small: photos[0].small, area: photos[0].area };
+    savePhotos(room.id);
     mem.photoIdx[room.id] = 0;
     room.photoAreas = photos.map((p) => p.area); delete room.photoArea;
     if (Array.isArray(res.furniture) && res.furniture.length) room.furniture = res.furniture.slice(0, 12);
     const prev = S.sessions[room.id];
     const kept = prev ? prev.tasks.filter((t) => t.done) : [];
-    const tasks = (res.tasks || []).map((t) => ({ id: uid(), title: t.title, detail: t.detail || '', photo: clamp((Number(t.photo) || 1) - 1, 0, photos.length - 1), zone: ZONES.includes(t.zone) ? t.zone : null, points: clamp(Number(t.points) || 3, 1, 25), minutes: clamp(Number(t.minutes) || 0, 0, 90), category: t.category || 'other', done: false }));
+    const tasks = (res.tasks || []).filter((t) => t.sure !== false).map((t) => ({ id: uid(), title: t.title, detail: t.detail || '', where: t.where || '', box: validBox(t.box), photo: clamp((Number(t.photo) || 1) - 1, 0, photos.length - 1), zone: ZONES.includes(t.zone) ? t.zone : null, points: clamp(Number(t.points) || 3, 1, 25), minutes: clamp(Number(t.minutes) || 0, 0, 90), category: t.category || 'other', done: false }));
     S.sessions[room.id] = { tasks: [...kept, ...tasks], summary: res.summary || '', createdAt: Date.now(), demo: !!res.demo, sweep: prev && kept.length ? prev.sweep && !tasks.length : false };
     if (!tasks.length) {
       setShine(room, Math.max(shineOf(room), 90));
@@ -2415,8 +2519,9 @@ async function checkWithPhotos(room) {
     const befores = before ? (before.photos || [before]).map((p) => p.small).filter(Boolean) : [];
     const afters = [];
     for (const p of SCAN.photos) { const src = await loadImage(p.dataUrl); afters.push(toJpeg(src, src.naturalWidth, src.naturalHeight, 960, 0.8, p.area).b64); }
-    const res = await api.verify(befores, afters, open.map((t) => ({ id: t.id, title: t.title, zone: t.zone, photo: (t.photo || 0) + 1 })));
+    const res = await api.verify(befores, afters, open.map((t) => choreForAI(t, true)));
     const r = applyVerify(room.id, res, 'photo');
+    mem.likely[room.id] = r.likely;
     mem.lastFeedback[room.id] = res.feedback || line(r.count ? 'nice' : 'noChange');
     SCAN.photos = [];
     unbusy();
@@ -2433,7 +2538,7 @@ const MOVE = 6;        // average pixel change that counts as "someone is workin
 const CALM = 3.5;
 const SETTLE_MS = 2500; // how long the scene must stay still before a check
 const C = { el: null, stream: null, video: null, loop: null, clock: null, wake: null, roomId: null, start: 0, pts: 0, motion: 0, lastMotion: 0, activity: false, lastCheck: 0, checking: false, prev: null, ctx: null, lastStatus: '' };
-function coachLine(text, voice = true) { C.lastSpoke = Date.now(); rememberLine(text); typeInto($('#coachLine'), text); if (voice) speak(text); }
+function coachLine(text, voice = true) { C.lastSpoke = Date.now(); rememberLine(text); typeInto($('#coachLine'), text); if (voice) { C.lastVoiceAt = Date.now(); speak(text); } }
 // The last few things Fluff said, sent along to the AI so its feedback doesn't repeat them.
 function rememberLine(text) { if (!text) return; mem.recentLines = [...(mem.recentLines || []), String(text).slice(0, 140)].slice(-8); }
 
@@ -2453,6 +2558,7 @@ const LINES = {
     greetList: ['Hi {name}! The {room} list is still waiting for you.'],
     greetNeedy: ['Hi {name}! The {room} could use some love.'],
     firstUp: ["Start with this one: {task}!"],
+    confirm: ["Did you finish {task}? Tap Done if it's done!", "Ooh, is {task} done? Let me know!", "I think {task} is done. Am I right?"],
     setup: ['Prop me up high in a corner, pointing where you took this photo. Then tap I\'m set up!'],
     spotNext: ['Spot done! Carry me to spot {n}, then tap I\'m set up.'],
     seeAll: ['I can see all {count} from here. Let\'s sparkle!'],
@@ -2488,6 +2594,7 @@ const LINES = {
     greetList: ['Recruit {name}! Your {room} mission is still open. Get back out there!'],
     greetNeedy: ['Recruit {name}, the {room} is a disaster zone. Time to deploy.'],
     firstUp: ["First target: {task}. Move!"],
+    confirm: ["Report, recruit: is {task} complete? Tap Done.", "Status check on {task}. Done or not?", "Confirm, recruit: {task}. Finished?"],
     setup: ['Post me up high in a corner, aimed where that photo was taken. Tap I\'m set up when ready, recruit.'],
     spotNext: ['Sector cleared! Move me to spot {n} and tap I\'m set up.'],
     seeAll: ['All {count} in sight. Move out!'],
@@ -2523,6 +2630,7 @@ const LINES = {
     greetList: ['Hey {name}. The {room} list is still there. I checked. Twice. From bed.'],
     greetNeedy: ['{name}, the {room} looks like I feel. Just saying.'],
     firstUp: ["Start with {task}. It's the easy one."],
+    confirm: ["Is {task} done? My eyes are half closed. Tap Done if so.", "I think {task} happened. Did it?", "{Task}... done? Just tap it. I'm tired."],
     setup: ['Lean me somewhere high, facing where you took this photo. Tap I\'m set up. I\'ll be here. Resting.'],
     spotNext: ['This spot\'s done. Carry me to spot {n}. Gently. Then tap I\'m set up.'],
     seeAll: ['I can see all {count}. Unfortunately. Go.'],
@@ -2558,6 +2666,7 @@ const LINES = {
     greetList: ['Ahoy, {name}! The {room} still has treasure to plunder!'],
     greetNeedy: ['Shiver me timbers, {name}! The {room} be a shipwreck!'],
     firstUp: ["First, {task}, matey!"],
+    confirm: ["Is {task} done, matey? Tap Done!", "Arr, did ye finish {task}?", "Me spyglass says {task} be done. True?"],
     setup: ['Hoist me up high in a corner, facin\' where ye took this picture. Tap I\'m set up, matey!'],
     spotNext: ['This deck be clean! Haul me to spot {n} and tap I\'m set up.'],
     seeAll: ['All {count} in me spyglass. Hop to it!'],
@@ -2590,6 +2699,11 @@ const LINES = {
 };
 // MORE_LINES_START (generated by scripts/lines_more.py)
 LINES.glitz = {
+ "confirm": [
+  "Darling, is {task} done? Tell me it's done.",
+  "Did {task} just happen? Tap Done, sweetie.",
+  "I sense {task} is finished. Confirm, darling?"
+ ],
  "hello": [
   "Darling! You rang? Let's make this house worthy of me.",
   "Oh, it's you! Fabulous. Let's do something about this place.",
@@ -3386,7 +3500,7 @@ async function sendAsk(question, taskId) {
     const image = await askImage(roomId, t);
     if (t && t.photo != null && !C.el) mem.photoIdx[roomId] = t.photo;
     const open = sess ? sess.tasks.filter((x) => !x.done && (!t || x.id !== t.id)).map((x) => x.title) : [];
-    const res = await api.ask({ image, question, task: t ? { title: t.title, zone: t.zone } : null, tasks: open, persona: personaId(), recent: mem.recentLines || [] });
+    const res = await api.ask({ image, question, task: t ? { title: t.title, where: t.where || '', zone: t.zone } : null, tasks: open, persona: personaId(), recent: mem.recentLines || [] });
     if (!$('#askOut')) return;
     $('#askOut').innerHTML = `<div class="speaker ask-answer">${fluffSVG(res.found ? 'happy' : '')}<div class="dialog"><span class="tag">Fluff</span>${esc(res.answer)}</div></div>
       ${t && !res.found ? `<div class="row"><button class="btn" data-act="ask-remove" data-id="${t.id}">Remove this chore</button><button class="btn" data-act="ask-done" data-id="${t.id}">It's already done</button></div>` : ''}
@@ -3585,8 +3699,9 @@ async function startCoach(roomId) {
   unlockAudio();
   const room = roomById(roomId);
   Object.assign(C, { roomId, start: Date.now(), pts: 0, motion: 0, lastMotion: 0, activity: false, lastCheck: Date.now(), checking: false, prev: null, lastStatus: '',
-    lastSpoke: 0, lastPepAt: Date.now(), activeMs: 0, nudges: 0, ready: false, setup: null, spot: 0, base: null, visible: null, saidOut: false, nextRecap: Date.now() + (PEP_TIMING[S.settings.pep] || PEP_TIMING.light).recap, ms: {}, pepLast: {} });
+    lastSpoke: 0, lastVoiceAt: 0, denied: {}, lastPepAt: Date.now(), activeMs: 0, nudges: 0, ready: false, setup: null, spot: 0, base: null, visible: null, saidOut: false, nextRecap: Date.now() + (PEP_TIMING[S.settings.pep] || PEP_TIMING.light).recap, ms: {}, pepLast: {} });
   mem.newUnlocks = [];
+  mem.likely[roomId] = [];
   const el = document.createElement('section');
   el.className = 'coach'; el.id = 'coach';
   el.setAttribute('aria-label', 'Coach Mode');
@@ -3604,6 +3719,7 @@ async function startCoach(roomId) {
     <div class="ch-banner" id="chBanner" hidden aria-live="polite"><div class="ch-time" id="chTime">1:00</div><div class="ch-label" id="chLabel">Beat the clock</div></div>
     <div class="bottom">
       <div class="speaker">${fluffSVG()}<div class="dialog"><span class="tag">Fluff</span><span id="coachLine"></span></div></div>
+      <div class="confirm" id="cConfirm" hidden></div>
       <div class="coach-tasks" id="cTasks"></div>
       <div class="row"><button class="btn" data-act="ask">Ask</button><button class="btn" data-act="ch-open" id="chBtn">Challenge</button><button class="btn sun" data-act="coach-check">Check now</button></div>
     </div>`;
@@ -3628,7 +3744,7 @@ async function startCoach(roomId) {
   small.width = 48; small.height = 36;
   C.ctx = small.getContext('2d', { willReadFrequently: true });
   wakeOn();
-  if (!mem.before[roomId]) setTimeout(() => { if (C.video && C.video.videoWidth) { const f = grabFrame(768); mem.before[roomId] = { dataUrl: f.dataUrl, small: f.b64 }; } }, 1500);
+  if (!mem.before[roomId]) setTimeout(() => { if (C.video && C.video.videoWidth && !mem.before[roomId]) { const f = grabFrame(768); mem.before[roomId] = { dataUrl: f.dataUrl, small: f.b64 }; } }, 1500);
   C.loop = setInterval(coachTick, 200);
   C.clock = setInterval(() => {
     pepTick();
@@ -3804,11 +3920,24 @@ function renderCoachTasks() {
   box.innerHTML = sorted.map((t) => {
     const r = rank(t);
     const tag = r === 1 ? '<em class="out">Out of view</em>' : r === 2 && multi ? `<em>Spot ${spotNumber(t.photo || 0)}</em>` : '';
-    return `<button class="ctask ${t.done ? 'done' : ''}${r === 2 ? ' other' : ''}" data-act="coach-toggle" data-id="${t.id}" aria-pressed="${t.done}"><span>${esc(t.title)}</span>${tag}<span class="pts">${t.points}</span></button>`;
+    return `<button class="ctask ${t.done ? 'done' : ''}${r === 2 ? ' other' : ''}" data-act="coach-toggle" data-id="${t.id}" aria-pressed="${t.done}"><span>${esc(t.title)}${t.where && r < 2 ? `<small>${esc(t.where)}</small>` : ''}</span>${tag}<span class="pts">${t.points}</span></button>`;
   }).join('');
   $('#cPts').textContent = C.pts;
+  if (!$('#cConfirm').hidden) showConfirm(false); // drop chores that got done another way
   const chip = $('#cSpot'), spots = coachSpots();
   if (chip) { chip.hidden = spots.length < 2; chip.textContent = `Spot ${spotNumber(C.spot)}/${spots.length}`; }
+}
+// "Looks done?" bar in Coach Mode: one chore at a time, Done or Not yet.
+function showConfirm(speakIt) {
+  const el = $('#cConfirm'), sess = S.sessions[C.roomId];
+  if (!el || !sess) return;
+  const ids = (mem.likely[C.roomId] || []).filter((id) => sess.tasks.some((t) => t.id === id && !t.done));
+  mem.likely[C.roomId] = ids;
+  const t = ids.length && sess.tasks.find((x) => x.id === ids[0]);
+  if (!t) { el.hidden = true; el.innerHTML = ''; return; }
+  el.hidden = false;
+  el.innerHTML = `<span>Looks done: ${esc(t.title)}?</span><button class="btn small primary" data-act="likely-yes" data-id="${t.id}">Done</button><button class="btn small" data-act="likely-no" data-id="${t.id}">Not yet</button>`;
+  if (speakIt) coachLine(line('confirm', { task: choreName(t), Task: t.title.replace(/[.!]$/, '') }), !fluffBusy());
 }
 // The setup card: where to put the phone, then a quick check of what it can see from there.
 function showSetup(kind, a = '', b = '') {
@@ -3847,7 +3976,7 @@ async function frameCheck() {
   const open = spotOpen();
   const ref = spotPhoto(C.spot);
   let res;
-  try { res = await api.frame(view.b64, ref ? ref.small : null, open.map((t) => ({ id: t.id, title: t.title, zone: t.zone }))); }
+  try { res = await api.frame(view.b64, ref ? ref.small : null, open.map((t) => choreForAI(t, false))); }
   catch (e) { res = { visible: open.map((t) => t.id), tip: '', failed: true }; }
   if (!C.el || C.setup !== 'checking') return;
   C.visible = new Set(res.visible);
@@ -3868,7 +3997,8 @@ function startSpot(msg) {
   if (open.length && !open.some(inView)) { C.saidOut = true; coachLine('Okay! Tap chores when you finish them. I\'ll keep watching.'); return; }
   const first = firstChore();
   const hello = msg || line('start', { room: (roomById(C.roomId) || { name: 'room' }).name.toLowerCase() });
-  coachLine(first ? `${hello} ${line('firstUp', { task: choreName(first), Task: first.title.replace(/[.!]$/, ''), name: (player() || {}).name || 'friend' })}` : hello);
+  const at = first && first.where ? `, ${first.where}` : '';
+  coachLine(first ? `${hello} ${line('firstUp', { task: choreName(first) + at, Task: first.title.replace(/[.!]$/, '') + at, name: (player() || {}).name || 'friend' })}` : hello);
 }
 // The best chore to start with: one the camera can see, quick, and worth the most for the time.
 function firstChore() {
@@ -3935,7 +4065,7 @@ function coachTick() {
   const gapLeft = Math.ceil((S.settings.minGap * 1000 - (now - C.lastCheck)) / 1000);
   if (C.checking) return setStatus('checking', 'Checking…');
   // Someone working in view for a while: check anyway, so put-away things get noticed without stepping out.
-  if (C.activity && now - C.lastCheck > Math.max(30000, S.settings.minGap * 1500)) { runCheck(false); return; }
+  if (C.activity && C.motion < MOVE && now - C.lastCheck > Math.max(30000, S.settings.minGap * 1500)) { runCheck(false); return; }
   if (C.motion > MOVE) return setStatus('moving', 'You\'re working');
   if (C.activity && gapLeft > 0) return setStatus('', `Check in ${gapLeft}s`);
   if (C.activity && C.motion < CALM && now - C.lastMotion > SETTLE_MS) { runCheck(false); return; }
@@ -3955,9 +4085,12 @@ async function runCheck(manual, opts = {}) {
   const ref = spotPhoto(C.spot) || mem.before[C.roomId];
   const before = C.base || (ref && ref.small) || null;
   try {
-    const res = await api.verify(before, after.b64, open.map((t) => ({ id: t.id, title: t.title, zone: t.zone })));
+    const res = await api.verify(before, after.b64, open.map((t) => choreForAI(t, false)));
     if (!C.el) return;
     const r = applyVerify(C.roomId, res, 'coach');
+    // Looks done but Fluff isn't sure: ask (unless they said "not yet" to that chore in the last 2 minutes).
+    const ask = r.likely.filter((id) => Date.now() - ((C.denied || {})[id] || 0) > 120000);
+    if (ask.length) { mem.likely[C.roomId] = [...new Set([...(mem.likely[C.roomId] || []), ...ask])]; showConfirm(!opts.silent); }
     if (opts.silent) {
       if (r.count) { C.pts += r.pts; pop(`+${r.pts} ✦`); }
       renderCoachTasks();
@@ -3969,10 +4102,11 @@ async function runCheck(manual, opts = {}) {
       coachLine(res.feedback || line('nice'));
       pepAfterAward();
       challengeOnAward();
-    } else if (manual) {
+    } else if (manual && !ask.length) {
       coachLine(res.feedback || line('noChange'));
-    } else if (res.feedback) {
-      coachLine(res.feedback, !fluffBusy()); // shown always, said out loud unless Fluff is mid-answer
+    } else if (res.feedback && !ask.length) {
+      // Nothing new: show it, but only say it out loud now and then, so Fluff doesn't repeat itself every check.
+      coachLine(res.feedback, !fluffBusy() && Date.now() - (C.lastVoiceAt || 0) > 75000);
     }
     renderCoachTasks();
     if (sess.tasks.every((t) => t.done)) coachDone();
@@ -4100,6 +4234,17 @@ document.addEventListener('click', (e) => {
     case 'scan-area': editScanArea(Number(a.dataset.i)); break;
     case 'scan-go': runScan(); break;
     case 'photo-pick': mem.photoIdx[ui.roomId] = Number(a.dataset.i); render(); break;
+    case 'likely-yes': case 'likely-no': {
+      const rid = C.el ? C.roomId : ui.roomId, sess = S.sessions[rid];
+      const t = sess && sess.tasks.find((x) => x.id === id);
+      mem.likely[rid] = (mem.likely[rid] || []).filter((x) => x !== id);
+      if (act === 'likely-yes' && t && !t.done) {
+        const g = awardTask(rid, t, C.el ? 'coach' : 'photo'); pop(`+${g} ✦`); unlockAudio(); chime();
+        if (C.el) { C.pts += g; coachFluff(true); renderCoachTasks(); if (sess.tasks.every((x) => x.done)) coachDone(); else afterSpotProgress(); }
+      } else if (t) { C.denied = { ...(C.denied || {}), [id]: Date.now() }; }
+      if (C.el) showConfirm(); else render();
+      break;
+    }
     case 'select': {
       mem.selected = mem.selected === id ? null : id;
       const st = mem.selected && S.sessions[ui.roomId] && S.sessions[ui.roomId].tasks.find((x) => x.id === id);
@@ -4304,7 +4449,7 @@ document.addEventListener('click', (e) => {
     case 'del-room': {
       const r = roomById(id);
       if (r && confirm(`Remove the ${r.name}? Its chore list goes too.`)) {
-        S.rooms = S.rooms.filter((x) => x.id !== id); delete S.sessions[id];
+        S.rooms = S.rooms.filter((x) => x.id !== id); delete S.sessions[id]; delete mem.before[id]; savePhotos(id);
         save(); openSettings(); render();
       }
       break;
@@ -4312,6 +4457,7 @@ document.addEventListener('click', (e) => {
     case 'reset': {
       if (confirm('Reset everything? This clears all players, sparkles, rooms and lists on this phone.')) {
         try { localStorage.removeItem(STORE_KEY); } catch (err) { /* ignore */ }
+        clearPhotos(); mem.before = {};
         S = fresh(); closeSheet(); ui = { view: 'home', roomId: null }; render();
       }
       break;

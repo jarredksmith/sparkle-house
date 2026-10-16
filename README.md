@@ -63,6 +63,8 @@ On iPhones with an ultra-wide lens, Coach Mode uses it so one spot covers more o
 
 The setup check uses the helper's `/frame` route. An older helper without it still works: the app falls back to the regular progress check, which also reports what's out of view.
 
+When Fluff thinks a chore is done but isn't sure (the item might just be hidden), it asks with a **Done / Not yet** bar instead of guessing. "Not yet" keeps it from asking about that chore again for two minutes. Checks compare against landmarks rather than photo positions, because the coach camera sits somewhere different from the scan photos. "Put away" and "throw away" chores count as done as soon as the item is gone from its spot. Progress checks use Claude Sonnet by default (about half a cent each); set `MODEL_VERIFY` to `claude-haiku-5-5` to save money at some cost in accuracy.
+
 ## How Coach Mode decides when to check
 
 The phone compares tiny 48×36 snapshots of the camera feed five times a second, entirely on the device. When it sees movement, then stillness for about 2.5 seconds, and enough time has passed since the last check, it sends one photo to the helper along with the picture taken when the phone was set up and the open chores it can see from this spot. Claude replies with which chores are clearly done. Anything blocked or out of view stays open, and you can always tap a chore to mark it done yourself.
@@ -70,6 +72,13 @@ The phone compares tiny 48×36 snapshots of the camera feed five times a second,
 ## Scanning a room
 
 Take two to four photos from different corners. Fluff looks at them together, makes one chore list for the whole room, and notes which photo each chore is in. On the room page, the little photos under the big one switch views, and tapping a chore jumps to its photo. Check my work also takes several photos. Fluff also notes the room's main furniture, which the 3D house uses.
+
+To keep chores findable:
+- Each chore names the object with its color or a clear feature, plus a landmark for where to look (shown with a pin under the chore, like "on the coffee table, by the remote").
+- Pins on the photo mark each chore; tapping one outlines the item itself.
+- The AI only lists things it's sure about (unsure guesses are dropped), skips things that belong where they are, and no longer has to find at least three chores.
+- Dark or blurry photos get a "retake" warning before scanning, since they're the main cause of made-up chores.
+- Scan photos stay on the phone, so pins and Coach Mode reference photos survive a restart.
 
 ## The 3D house
 
@@ -146,9 +155,9 @@ The helper's `ALLOWED_ORIGINS` must include `capacitor://localhost` so the app c
 
 ## Privacy
 
-- Photos go to your helper and on to Claude for that one request. Neither the app nor the helper saves them.
+- Photos go to your helper and on to Claude for that one request. The helper doesn't save them.
+- The app keeps each room's scan photos on that phone only (IndexedDB), so the room page keeps its markers and Coach Mode keeps its reference photos after a restart. Photos are never synced. "Reset everything" in Settings removes them.
 - Lists, points, and players are stored in the phone's local storage, and in your own D1 database if household sync is on.
-- The before photo stays in memory while the app is open, so "Scan again" is needed to see task areas after relaunching.
 
 ## Updating the app
 
